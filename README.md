@@ -1,12 +1,30 @@
 ````{R}
-# cl-validation
-For code written to do assessments of deeds data over Summer 2024
+#installs library 
+library(DBI)
+library(dbplyr)
+library(dplyr)
+library(duckdb)
+library(duckplyr)
+library(tidyr)
+library(tidyselect)
+library(tibble)
+library(RSQLite)
+````
 
-con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
-NC= dbGetQuery(con, "SELECT * FROM deeds")
-#df = as_tibble(NC)
+
+
+````{R}
+con=dbConnect(duckdb(),"cl.db")
+
+
+fullData= tbl(con, "deeds")
+
+
+NCdata= fullData |> filter(`DEED SITUS STATE - STATIC` == "NC") #|> collect()
+
+print(NCdata)
+
 dbDisconnect(con)
-
 
 
 ````
