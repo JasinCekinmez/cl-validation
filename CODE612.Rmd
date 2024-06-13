@@ -16,11 +16,12 @@ library(RSQLite)
 ````{R}
 #creates a database connection to cl.db which is the unzipped db file with deeds as the table
 #db file
-con=dbConnect(duckdb(),"cl.db")
+con=dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
 
 #takes the database connection and turns it into a tibble 
 fullData= tbl(con, "deeds")
-#print(fullData)
+
+
 
 
 
@@ -28,31 +29,68 @@ fullData= tbl(con, "deeds")
 StateData= fullData |> group_by(`DEED SITUS STATE - STATIC`) |> summarize(n = n())
 #print(StateData)
 
+# finds the number of rows 
+#result <- dbGetQuery(con, "SELECT COUNT(*) AS row_count FROM deeds")
+# Extract the row count from the result
+#row_count <- result$row_count
+# Print the row count
+#print(row_count)
+
+
+# this code helped me realize mistakes present in the data 
 #filters data to show how many deeds each state has at least listed 
-CountyData= fullData|> group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`)|> summarize(n = n())
+#CountyData= fullData|>filter(`DEED SITUS STATE - STATIC`!="NA")|> filter(`DEED SITUS COUNTY - STATIC`=="SAN DIEGO" & `DEED SITUS STATE - STATIC` != "CA") #|> #filter(`DEED SITUS STATE - STATIC` != "CA" ) 
+#print(CountyData)
+
+# countydata 
+CountyData= fullData |> filter(`DEED SITUS STATE - STATIC` != "NA") |> group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(n = n())
 #print(CountyData)
 
 
+
+
 # Here I realized that the county may be listed, but the state may not be but not the converse as I have seen with previous tests 
-SANDDATA=fullData |> filter(`DEED SITUS COUNTY - STATIC`=="SAN DIEGO")
+#SANDDATA=fullData |>filter(`DEED SITUS STATE - STATIC`!="NA") |> filter(`DEED SITUS COUNTY - STATIC`=="SAN DIEGO") |> summarize(n = n())
 #print(SANDDATA)
 
-apnData= (fullData |> group_by(`DEED SITUS STATE - STATIC`) |> filter(`APN SEQUENCE NUMBER`!="NA")|> summarize(n = n()))
-#print(apnData)
 
+#apndata practice 
+#apnData= (fullData |> group_by(`DEED SITUS STATE - STATIC`) |> filter(`APN SEQUENCE NUMBER`!="NA")|> summarize(n = n()))
+#print(apnData)
 #apnData= left_join(apnData,StateData,by="DEED SITUS STATE - STATIC")
 #apnData= apnData |> rename("APN Present" = `n.x`, "Total Deeds" = `n.y` )
 #apnData= apnData |> mutate("% missing"= 100* (1-(`APN Present`)/(`Total Deeds`)))
 #print(apnData)
 
 #creates tibble for each column and reports the missingness 
-tibbleCreator= function(column) {
+tibbleCreator= function(column, region) {
 #turns column into variable rather than string
 column=as.name(column)
+#region=as.name(region)
+if(region=="DEED SITUS STATE - STATIC"){
 #filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
-data = (fullData |> group_by(`DEED SITUS STATE - STATIC`) |>filter(column !="NA") |> summarize(n = n()))
+  region=as.name(region)
+data = (fullData |> group_by(region) |>filter(column !="NA") |> summarize(n = n()))
 #the above table is now being appended to the right by the total # of deeds per state 
-data  = left_join(data, StateData, by="DEED SITUS STATE - STATIC")
+region=toString(region)
+data  = left_join(data, StateData, by=region)
+#column1=paste0(column," Present") doesn't do anything so I manually change the column name outside the function
+#@ANGELA, do you have an idea of how to change the column name within the function 
+data= data |> rename(column1= `n.x`, "Total Deeds" = `n.y`)
+#changes column names 
+options(scipen = 999)
+#takes out scientific notation, QUESTION SHOULD I ROUND OR NOT TO 2 DIGITS?
+data= data |> mutate("% missing"= 100* (1-((`column1`)/(`Total Deeds`)))) 
+#Now gives the missingness 
+return(data)}
+else{
+region=as.name(region)
+data = (fullData |>filter(column !="NA" & `DEED SITUS STATE - STATIC` != "NA" ) |> group_by(region,`DEED SITUS STATE - STATIC`)  |> summarize(n = n())) 
+region=toString(region)       
+data= data|> left_join(CountyData, data, by=c(region,"DEED SITUS STATE - STATIC")) 
+#data= data|> left_join(data, CountyData, by=region) |> arrange(desc(`DEED SITUS COUNTY - STATIC`))
+#the above table is now being appended to the right by the total # of deeds per state 
+#data  = left_join(data, CountyData, by=region)
 #column1=paste0(column," Present") doesn't do anything so I manually change the column name outside the function
 #@ANGELA, do you have an idea of how to change the column name within the function 
 data= data |> rename(column1= `n.x`, "Total Deeds" = `n.y`)
@@ -62,8 +100,11 @@ options(scipen = 999)
 data= data |> mutate("% missing"= 100* (1-((`column1`)/(`Total Deeds`)))) 
 #Now gives the missingness 
 return(data)
-}
+}}
 
+data=tibbleCreator("APN SEQUENCE NUMBER","DEED SITUS COUNTY - STATIC")
+data =data |> rename("APN SEQUENCE NUMBER Present" = `column1`) 
+print(data)
 
 # checks missingness of APN Sequence Number by state 
 #tibbleCreator("APN SEQUENCE NUMBER")
