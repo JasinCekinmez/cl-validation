@@ -29,6 +29,30 @@ fullData= tbl(con, "deeds")
 StateData= fullData |> group_by(`DEED SITUS STATE - STATIC`) |> summarize(n = n())
 #print(StateData)
 
+#QuartileData=fullData |> group_by(`DEED SITUS STATE - STATIC`) |> filter(`DEED SITUS STATE - STATIC`!="NA")|> select(`SALE DERIVED DATE`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> select(-`SALE DERIVED DATE`) |> arrange(desc(`SALE DERIVED YEAR`),desc(`DEED SITUS STATE - STATIC`))
+
+
+
+##### THIS FINDS THE MEDIAN SALE DERIVED DATE YEAR FOR EACH STATE 
+#QuartileData=fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS STATE - STATIC`) |> select(-`SALE DERIVED DATE`) |> summarize(Median = median(as.numeric(`SALE DERIVED YEAR`),na.rm = TRUE ))
+
+#QuantileStateData = fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS STATE - STATIC`) |>
+#summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+#print(QuantileStateData)
+
+QuantileCountyData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA",`DEED SITUS COUNTY - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS COUNTY - STATIC` ,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+print(QuantileCountyData)
+
+
+
+
+
+
+
+#med=median(pull(QuartileData,`SALE DERIVED YEAR`),na.rm = TRUE)
+#print(med)
+
+
 # finds the number of rows 
 #result <- dbGetQuery(con, "SELECT COUNT(*) AS row_count FROM deeds")
 # Extract the row count from the result
@@ -118,6 +142,7 @@ return(data)
 
 #data=tibbleCreator("DEED SITUS ZIP CODE - STATIC","DEED SITUS COUNTY - STATIC")
 #data =data |> rename("DEED SITUS ZIP CODE - STATIC Present" = `column1`) 
+#data=data |> arrange(desc(`DEED SITUS COUNTY - STATIC`))
 #print(data)
 
 #data=tibbleCreator("SALE DERIVED DATE","DEED SITUS COUNTY - STATIC")
