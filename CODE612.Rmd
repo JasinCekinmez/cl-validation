@@ -22,35 +22,23 @@ con=dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update
 fullData= tbl(con, "deeds")
 
 
-
-
-
 #filters data to show how many deeds each state has at least listed 
 StateData= fullData |> group_by(`DEED SITUS STATE - STATIC`) |> summarize(n = n())
-#print(StateData)
-
-#QuartileData=fullData |> group_by(`DEED SITUS STATE - STATIC`) |> filter(`DEED SITUS STATE - STATIC`!="NA")|> select(`SALE DERIVED DATE`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> select(-`SALE DERIVED DATE`) |> arrange(desc(`SALE DERIVED YEAR`),desc(`DEED SITUS STATE - STATIC`))
 
 
 
 ##### THIS FINDS THE MEDIAN SALE DERIVED DATE YEAR FOR EACH STATE 
 #QuartileData=fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS STATE - STATIC`) |> select(-`SALE DERIVED DATE`) |> summarize(Median = median(as.numeric(`SALE DERIVED YEAR`),na.rm = TRUE ))
 
-#QuantileStateData = fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS STATE - STATIC`) |>
-#summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
-#print(QuantileStateData)
 
-QuantileCountyData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA",`DEED SITUS COUNTY - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS COUNTY - STATIC` ,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
-print(QuantileCountyData)
+#finds the 2.5% quantile for each state 
+QuantileStateData = fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS STATE - STATIC`) |>
+summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
 
 
+#finds the 2.5% for each county 
+QuantileCountyData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS COUNTY - STATIC` ,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
 
-
-
-
-
-#med=median(pull(QuartileData,`SALE DERIVED YEAR`),na.rm = TRUE)
-#print(med)
 
 
 # finds the number of rows 
@@ -68,11 +56,6 @@ print(QuantileCountyData)
 
 # countydata 
 CountyData= fullData |> filter(`DEED SITUS STATE - STATIC` != "NA") |> group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(n = n())
-#print(CountyData)
-
-
-
-
 
 
 # Here I realized that the county may be listed, but the state may not be but not the converse as I have seen with previous tests 
@@ -80,13 +63,6 @@ CountyData= fullData |> filter(`DEED SITUS STATE - STATIC` != "NA") |> group_by(
 #print(SANDDATA)
 
 
-#apndata practice 
-#apnData= (fullData |> group_by(`DEED SITUS STATE - STATIC`) |> filter(`APN SEQUENCE NUMBER`!="NA")|> summarize(n = n()))
-#print(apnData)
-#apnData= left_join(apnData,StateData,by="DEED SITUS STATE - STATIC")
-#apnData= apnData |> rename("APN Present" = `n.x`, "Total Deeds" = `n.y` )
-#apnData= apnData |> mutate("% missing"= 100* (1-(`APN Present`)/(`Total Deeds`)))
-#print(apnData)
 
 #creates tibble for each column and reports the missingness 
 tibbleCreator= function(column, region) {
@@ -125,6 +101,9 @@ data= data |> mutate("% missing"= 100* (1-((`column1`)/(`Total Deeds`))))
 #Now gives the missingness 
 return(data)
 }}
+
+#### IMPORTANT THIS NEXT SECTION CREATES TABLE FOR THE DATA ASCRIBED FOR STATE AND COUNTY
+
 
 #data=tibbleCreator("SALE AMOUNT","DEED SITUS COUNTY - STATIC")
 #data =data |> rename("SALE AMOUNT Present" = `column1`) 
