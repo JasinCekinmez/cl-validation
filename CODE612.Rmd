@@ -9,6 +9,7 @@ library(tidyr)
 library(tidyselect)
 library(tibble)
 library(RSQLite)
+library(stringr)
 ````
 
 
@@ -21,6 +22,50 @@ con=dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update
 #takes the database connection and turns it into a tibble 
 fullData= tbl(con, "deeds")
 
+
+
+#Takes out lowercase state abbreviations made me realize there are quite a bit of different non state abbreviations 
+#yet there are still many typo caps 
+#caps=fullData |> filter(str_detect(`DEED SITUS STATE - STATIC`,"[A-Z][A-Z]")||is.na(`DEED SITUS STATE - STATIC`)) |> group_by(`DEED SITUS STATE - STATIC`) |> summarize(n = n())
+#print(caps)
+
+
+
+#displays number of NON FMV data
+#FMVData= fullData |> filter(`PRIMARY CATEGORY CODE`=="B"||`PRIMARY CATEGORY CODE`=="C"||`FORECLOSURE REO SALE INDICATOR`=="1"||`SALE TYPE CODE`=="L"||`INTERFAMILY RELATED INDICATOR`=="1"||`SHORT SALE INDICATOR`=="1")|> summarize(n=n())
+#print(FMVData)
+
+
+#Currently FMV DATA took a while to realize that the reason sale type code was causing issues was that it had NA Values 
+#
+FMVData= fullData |> filter(`PRIMARY CATEGORY CODE`!="B"&`PRIMARY CATEGORY CODE`!="C"&`FORECLOSURE REO SALE INDICATOR`!="1"& `INTERFAMILY RELATED INDICATOR`!="1" & `SHORT SALE INDICATOR`!="1") |>filter(`SALE TYPE CODE`!="L"||is.na(`SALE TYPE CODE`))
+#print(FMVData)
+
+
+
+
+
+#THIS SECTION looks at each group to see the most common type of each and which codes exist 
+#Primtype= fullData |> group_by(`PRIMARY CATEGORY CODE`) |> summarize(n=n())
+#print(Primtype)
+
+#Cattype= fullData |> group_by(`DEED CATEGORY TYPE CODE`) |> summarize(n=n())
+#print(Cattype)
+
+#SaleType= fullData |> group_by(`SALE TYPE CODE`) |> summarize(n=n())
+#print(SaleType)
+
+#Saledoc = fullData |> group_by(`SALE DOCUMENT TYPE  CODE`) |> summarize(n=n())
+#print(Saledoc)
+
+#family= fullData |> group_by(`INTERFAMILY RELATED INDICATOR`) |> summarize(n=n())
+#print(family)
+
+#short= fullData |> group_by(`SHORT SALE INDICATOR`) |> summarize(n=n())
+#print(short)
+
+#foreclosure = fullData |> group_by(`FORECLOSURE REO SALE INDICATOR`) |> summarize(n=n())
+#print(foreclosure)
 
 #filters data to show how many deeds each state has at least listed 
 StateData= fullData |> group_by(`DEED SITUS STATE - STATIC`) |> summarize(n = n())
