@@ -10,6 +10,7 @@ library(tidyselect)
 library(tibble)
 library(RSQLite)
 library(stringr)
+library(rlang)
 
 ````
 
@@ -27,7 +28,10 @@ statenewabb=c("DC", state.abb)
 fullData= tbl(con, "deeds")
 fullData= fullData |> filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
 
+StateYearData=fullData |> filter(`DEED SITUS STATE - STATIC` != "NA" ) |> group_by(substr(`SALE DERIVED DATE`,1,4),`DEED SITUS STATE - STATIC`) |> summarize(n=n())
+#print(StateYearData)
 
+CountyYearData=fullData |> filter(`DEED SITUS STATE - STATIC` != "NA" ) |> group_by(substr(`SALE DERIVED DATE`,1,4),`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(n=n())
 
 
 #fips =fullData |> filter(!is.na(`FIPS CODE`)) |> group_by(`FIPS CODE`) 
@@ -123,115 +127,162 @@ CountyData= fullData |> filter(`DEED SITUS STATE - STATIC` != "NA") |> group_by(
 
 
 #creates tibble for each column and reports the missingness 
-tibbleCreator= function(column, region) {
+tibbleCreator= function(column, region, year) {
 #turns column into variable rather than string
 column=as.name(column)
 if(region=="DEED SITUS STATE - STATIC"){
+if(!year){
+colu=paste0(toString(column)," PRESENT")
 #filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
-  region=as.name(region)
-data = (fullData |> group_by(region) |>filter(column !="NA") |> summarize(n = n()))
+region=as.name(region)
+
+data = (fullData |> group_by(region) |>filter(column !="NA") |> summarize(!!colu := n()))
 #the above table is now being appended to the right by the total # of deeds per state 
+
+
 region=toString(region)
 data  = left_join(data, StateData, by=region)
-#column1=paste0(column," Present") doesn't do anything so I manually change the column name outside the function
-#@ANGELA, do you have an idea of how to change the column name within the function 
-data= data |> rename(column1= `n.x`, "Total Deeds" = `n.y`)
-#changes column names 
-data= data |> mutate("% missing"= round((100* (1-((`column1`)/(`Total Deeds`)))), digits=2)) 
-#Now gives the missingness 
 
-#THE CSV FILE CREATED WILL DISPLAY COLUMN1 BUT THE CSV FILE NAME SHOULD TELL YOU WHAT TO 
-#RENAME THE COLUMN TO 
+
+data= data |> rename("Total Deeds" = `n`)
+#changes column names 
+
+
+data= data |> mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+#Now gives the missingness 
+data=data |>  arrange(desc(`DEED SITUS STATE - STATIC`))
+
+
 #CREATES CSV File
 column=toString(column)
 csvtitle=paste0(column,region,".csv")
 write.csv(data,csvtitle)
-
-
-
 return(data)}
 else{
+colu=paste0(toString(column)," PRESENT")
+#filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
 region=as.name(region)
-data = fullData |>filter(column != "NA") |> filter(`DEED SITUS STATE - STATIC` != "NA" ) |> group_by(region,`DEED SITUS STATE - STATIC`)  |> summarize(n = n()) 
-region=toString(region)       
-data= data|> left_join(CountyData, data, by=c(region,"DEED SITUS STATE - STATIC")) 
 
-#column1=paste0(column," Present") doesn't do anything so I manually change the column name outside the function
-#@ANGELA, do you have an idea of how to change the column name within the function 
+data=fullData |> filter(column!="NA") |> filter(`DEED SITUS STATE - STATIC` != "NA") |> group_by(substr(`SALE DERIVED DATE`, 1, 4),`DEED SITUS STATE - STATIC`) |> summarize(!!colu := n())
+region=toString(region)
 
-data= data |> rename(column1= `n.x`, "Total Deeds" = `n.y`)
+data  = left_join(data, StateYearData, by=c("substr(`SALE DERIVED DATE`, 1, 4)","DEED SITUS STATE - STATIC"))
+data= data |> rename("Total Deeds" = `n`)
+data= data |> rename(`SALE DERIVED YEAR` = `substr(\`SALE DERIVED DATE\`, 1, 4)`)
 
-
-data= data |> mutate("% missing"= round((100* (1-((`column1`)/(`Total Deeds`)))), digits=2)) 
+data= data |> mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
 #Now gives the missingness 
+data=data |>  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`SALE DERIVED YEAR`))
 
-#THE CSV FILE CREATED WILL DISPLAY COLUMN1 BUT THE CSV FILE NAME SHOULD TELL YOU WHAT TO 
-#RENAME THE COLUMN TO 
 #CREATES CSV File
 column=toString(column)
-csvtitle=paste0(column,region,".csv")
+csvtitle=paste0(column,region,"YEAR.csv")
 write.csv(data,csvtitle)
 
 
 return(data)
+
+  
+  }}
+else{
+if(!year){
+region=as.name(region)
+colu=paste0(toString(column)," PRESENT")
+
+data = fullData |>filter(column != "NA") |> filter(`DEED SITUS STATE - STATIC` != "NA" ) |> group_by(region,`DEED SITUS STATE - STATIC`)  |> summarize(!!colu := n()) 
+
+
+region=toString(region)       
+data= data|> left_join(CountyData, data, by=c(region,"DEED SITUS STATE - STATIC")) 
+
+
+data= data |> rename("Total Deeds" = `n`)
+
+
+data= data |> mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+#Now gives the missingness 
+data=data |>  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`DEED SITUS COUNTY - STATIC`))
+
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0(column,region,".csv")
+write.csv(data,csvtitle)
+
+
+return(data)}
+else{
+colu=paste0(toString(column)," PRESENT")
+#filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
+region=as.name(region)
+
+data=fullData |> filter(column!="NA") |> filter(`DEED SITUS STATE - STATIC` != "NA") |> group_by(substr(`SALE DERIVED DATE`, 1, 4),`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(!!colu := n())
+region=toString(region) 
+
+data  = left_join(data,CountyYearData, by=c("substr(`SALE DERIVED DATE`, 1, 4)","DEED SITUS COUNTY - STATIC","DEED SITUS STATE - STATIC"))  
+
+data= data |> rename("Total Deeds" = `n`)
+data= data |> rename(`SALE DERIVED YEAR` = `substr(\`SALE DERIVED DATE\`, 1, 4)`)
+
+data= data |> mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+#Now gives the missingness 
+#data=data |>  arrange(desc(`SALE DERIVED YEAR`),desc(`DEED SITUS COUNTY - STATIC`) ,desc(`DEED SITUS STATE - STATIC`))
+data=data |>  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`DEED SITUS COUNTY - STATIC`) ,desc(`SALE DERIVED YEAR`))
+
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0(column,region,"YEAR.csv")
+write.csv(data,csvtitle)
+
+
+return(data)
+
+  
+}
 }}
 
 #### IMPORTANT THIS NEXT SECTION CREATES TABLE FOR THE DATA ASCRIBED FOR STATE AND COUNTY
-
+###Remember to add TRUE and FALSE to each tibbleCreator()
 
 #data=tibbleCreator("SALE AMOUNT","DEED SITUS COUNTY - STATIC")
-#data =data |> rename("SALE AMOUNT Present" = `column1`) 
 #print(data)
 
-#data=tibbleCreator("APN SEQUENCE NUMBER","DEED SITUS COUNTY - STATIC")
-#data =data |> rename("APN SEQUENCE NUMBER Present" = `column1`) 
+#data=tibbleCreator("APN SEQUENCE NUMBER","DEED SITUS STATE - STATIC",TRUE)
 #print(data)
 
 #data=tibbleCreator("DEED SITUS CITY - STATIC","DEED SITUS COUNTY - STATIC")
-#data =data |> rename("DEED SITUS CITY - STATIC" = `column1`) 
 #data=data |> arrange(desc(`DEED SITUS STATE - STATIC`))
-#ASK ANGELA WHAT TO DO WITH LOWERCASE AND INCORRECT CASES 
 #print(data)
 
 #data=tibbleCreator("DEED SITUS ZIP CODE - STATIC","DEED SITUS COUNTY - STATIC")
-#data =data |> rename("DEED SITUS ZIP CODE - STATIC Present" = `column1`) 
 #data=data |> arrange(desc(`DEED SITUS COUNTY - STATIC`))
 #print(data)
 
 #data=tibbleCreator("SALE DERIVED DATE","DEED SITUS COUNTY - STATIC")
-#data =data |> rename("SALE DERIVED DATE Present" = `column1`) 
 #print(data)
 
 #data=tibbleCreator("SALE DERIVED RECORDING DATE","DEED SITUS COUNTY - STATIC")
-#data =data |> rename("SALE DERIVED RECORDING DATE Present" = `column1`) 
 #print(data)
 
 
 #data=tibbleCreator("LAND USE CODE - STATIC","DEED SITUS COUNTY - STATIC")
-#data =data |> rename("LAND USE CODE - STATIC Present" = `column1`) 
 #print(data)
 
 #data=tibbleCreator("ACTUAL YEAR BUILT - STATIC","DEED SITUS COUNTY - STATIC")
-#data =data |> rename("ACTUAL YEAR BUILT - STATIC Present" = `column1`) 
 #print(data)
 
 #data=tibbleCreator("PROPERTY INDICATOR CODE - STATIC","DEED SITUS COUNTY - STATIC")
-#data =data |> rename("PROPERTY INDICATOR CODE - STATIC Present" = `column1`) 
 #print(data)
 
-data=tibbleCreator("PROPERTY INDICATOR CODE - STATIC","DEED SITUS STATE - STATIC")
-data =data |> rename("PROPERTY INDICATOR CODE - STATIC Present" = `column1`) 
-print(data)
+#data=tibbleCreator("PROPERTY INDICATOR CODE - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#print(data)
 
 # checks missingness of APN Sequence Number by state 
-#data=tibbleCreator("APN SEQUENCE NUMBER","DEED SITUS STATE - STATIC")
-#data =data |> rename("APN SEQUENCE NUMBER Present" = `column1`) 
+#data=tibbleCreator("APN SEQUENCE NUMBER","DEED SITUS STATE - STATIC",TRUE)
 #print(data)
 
 
 # checks missingness of city by state 
 #data=tibbleCreator("DEED SITUS CITY - STATIC","DEED SITUS STATE - STATIC")
-#data =data |> rename("DEED SITUS CITY - STATIC Present" = `column1`) 
 #print(data)
 
 
@@ -239,38 +290,31 @@ print(data)
 # checks missingness of county by state 
 #tibbleCreator("DEED SITUS COUNTY - STATIC")
 #data=tibbleCreator("DEED SITUS COUNTY - STATIC")
-#data =data |> rename("DEED SITUS COUNTY - STATIC Present" = `column1`) 
 #print(data)
 
 
 # checks missingness of zipcode by state 
 #data=tibbleCreator( "DEED SITUS ZIP CODE - STATIC","DEED SITUS STATE - STATIC")
-#data =data |> rename( "DEED SITUS ZIP CODE - STATIC Present" = `column1`) 
 #print(data)
 
 # checks missingness of Sale Amount by state 
 #data=tibbleCreator(  "SALE AMOUNT","DEED SITUS STATE - STATIC")
-#data =data |> rename(  "SALE AMOUNT Present" = `column1`) 
 #print(data)
 
 # checks missingness of Sale Derived Rate by state"
 #data=tibbleCreator("SALE DERIVED DATE","DEED SITUS STATE - STATIC")
-#data =data |> rename( "SALE DERIVED DATE Present" = `column1`) 
 #print(data)
 
 # checks missingness of Sale Derived Date by state"
 #data=tibbleCreator( "SALE DERIVED RECORDING DATE","DEED SITUS STATE - STATIC")
-#data =data |> rename(  "SALE DERIVED RECORDING DATE Present" = `column1`) 
 #print(data)
 
 # checks missingness of Land Use Code by state"
 #data=tibbleCreator("LAND USE CODE - STATIC","DEED SITUS STATE - STATIC")
-#data =data |> rename(  "LAND USE CODE - STATIC Present" = `column1`) 
 #print(data)
 
 # checks missingness of build year by state"
 #data=tibbleCreator("ACTUAL YEAR BUILT - STATIC","DEED SITUS STATE - STATIC")
-#data =data |> rename("ACTUAL YEAR BUILT - STATIC Present" = `column1`) 
 #print(data)
 
 
