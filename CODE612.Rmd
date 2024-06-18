@@ -10,6 +10,7 @@ library(tidyselect)
 library(tibble)
 library(RSQLite)
 library(stringr)
+
 ````
 
 
@@ -19,8 +20,19 @@ library(stringr)
 #db file
 con=dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
 
-#takes the database connection and turns it into a tibble 
+#Adds DC to state.abb 
+statenewabb=c("DC", state.abb)
+
+#takes the database connection and turns it into a tibble and filters out non states and DC and ones that do not exist
 fullData= tbl(con, "deeds")
+fullData= fullData |> filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+
+
+
+#fips =fullData |> filter(!is.na(`FIPS CODE`)) |> group_by(`FIPS CODE`) 
+#print(fips)
+
 
 
 
@@ -86,6 +98,7 @@ QuantileCountyData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> sel
 
 
 
+
 # finds the number of rows 
 #result <- dbGetQuery(con, "SELECT COUNT(*) AS row_count FROM deeds")
 # Extract the row count from the result
@@ -124,10 +137,18 @@ data  = left_join(data, StateData, by=region)
 #@ANGELA, do you have an idea of how to change the column name within the function 
 data= data |> rename(column1= `n.x`, "Total Deeds" = `n.y`)
 #changes column names 
-options(scipen = 999)
-#takes out scientific notation, QUESTION SHOULD I ROUND OR NOT TO 2 DIGITS?
-data= data |> mutate("% missing"= 100* (1-((`column1`)/(`Total Deeds`)))) 
+data= data |> mutate("% missing"= round((100* (1-((`column1`)/(`Total Deeds`)))), digits=2)) 
 #Now gives the missingness 
+
+#THE CSV FILE CREATED WILL DISPLAY COLUMN1 BUT THE CSV FILE NAME SHOULD TELL YOU WHAT TO 
+#RENAME THE COLUMN TO 
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0(column,region,".csv")
+write.csv(data,csvtitle)
+
+
+
 return(data)}
 else{
 region=as.name(region)
@@ -140,10 +161,18 @@ data= data|> left_join(CountyData, data, by=c(region,"DEED SITUS STATE - STATIC"
 
 data= data |> rename(column1= `n.x`, "Total Deeds" = `n.y`)
 
-options(scipen = 999)
-#takes out scientific notation, QUESTION SHOULD I ROUND OR NOT TO 2 DIGITS?
-data= data |> mutate("% missing"= 100* (1-((`column1`)/(`Total Deeds`)))) 
+
+data= data |> mutate("% missing"= round((100* (1-((`column1`)/(`Total Deeds`)))), digits=2)) 
 #Now gives the missingness 
+
+#THE CSV FILE CREATED WILL DISPLAY COLUMN1 BUT THE CSV FILE NAME SHOULD TELL YOU WHAT TO 
+#RENAME THE COLUMN TO 
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0(column,region,".csv")
+write.csv(data,csvtitle)
+
+
 return(data)
 }}
 
@@ -190,9 +219,9 @@ return(data)
 #data =data |> rename("PROPERTY INDICATOR CODE - STATIC Present" = `column1`) 
 #print(data)
 
-#data=tibbleCreator("PROPERTY INDICATOR CODE - STATIC","DEED SITUS STATE - STATIC")
-#data =data |> rename("PROPERTY INDICATOR CODE - STATIC Present" = `column1`) 
-#print(data)
+data=tibbleCreator("PROPERTY INDICATOR CODE - STATIC","DEED SITUS STATE - STATIC")
+data =data |> rename("PROPERTY INDICATOR CODE - STATIC Present" = `column1`) 
+print(data)
 
 # checks missingness of APN Sequence Number by state 
 #data=tibbleCreator("APN SEQUENCE NUMBER","DEED SITUS STATE - STATIC")
