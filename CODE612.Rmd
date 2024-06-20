@@ -11,58 +11,70 @@ library(tibble)
 library(RSQLite)
 library(stringr)
 library(rlang)
+library(styler) 
+#sf
 
 ````
 
 
 
+
 ````{R}
-#creates a database connection to cl.db which is the unzipped db file with deeds as the table
+#Creates a database connection to cl.db which is the unzipped db file with deeds as the table
 #db file
-con=dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
 
 #Adds DC to state.abb 
-statenewabb=c("DC", state.abb)
+statenewabb = c("DC", state.abb)
 
-#takes the database connection and turns it into a tibble and filters out non states and DC and ones that do not exist
-fullData= tbl(con, "deeds")
-fullData= fullData |> filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+#Takes the database connection and turns it into a tibble and filters out non states and DC and ones that do not exist
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
 
-StateYearData=fullData |> filter(`DEED SITUS STATE - STATIC` != "NA" ) |> group_by(substr(`SALE DERIVED DATE`,1,4),`DEED SITUS STATE - STATIC`) |> summarize(n=n())
-#print(StateYearData)
+#Creates Table filtering deed data for each state and year 
+StateYearData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
+  group_by(substr(`SALE DERIVED DATE`,1,4),`DEED SITUS STATE - STATIC`) |>
+  summarize(n=n())
 
-CountyYearData=fullData |> filter(`DEED SITUS STATE - STATIC` != "NA" ) |> group_by(substr(`SALE DERIVED DATE`,1,4),`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(n=n())
 
+#Creates Table filtering deed data for each county and year 
+CountyYearData = fullData |>
+  filter(`DEED SITUS STATE - STATIC` != "NA" ) |> 
+  group_by(substr(`SALE DERIVED DATE`,1,4),
+           `DEED SITUS COUNTY - STATIC`,
+           `DEED SITUS STATE - STATIC`) |> 
+  summarize(n=n())
 
-#fips =fullData |> filter(!is.na(`FIPS CODE`)) |> group_by(`FIPS CODE`) 
+#Examining Fips Code
+#fips = fullData |>filter(!is.na(`FIPS CODE`)) |>
+#  group_by(`FIPS CODE`) 
 #print(fips)
 
-
-
-
 #Takes out lowercase state abbreviations made me realize there are quite a bit of different non state abbreviations 
-#yet there are still many typo caps 
-#caps=fullData |> filter(str_detect(`DEED SITUS STATE - STATIC`,"[A-Z][A-Z]")||is.na(`DEED SITUS STATE - STATIC`)) |> group_by(`DEED SITUS STATE - STATIC`) |> summarize(n = n())
+#,yet there are still many typo caps 
+#caps=fullData |> filter(str_detect(`DEED SITUS STATE - STATIC`,"[A-Z][A-Z]")||is.na(`DEED SITUS STATE - STATIC`)) |>      group_by(`DEED SITUS STATE - STATIC`) |> 
+  #summarize(n = n())
 #print(caps)
 
-
-
 #displays number of NON FMV data
-#FMVData= fullData |> filter(`PRIMARY CATEGORY CODE`=="B"||`PRIMARY CATEGORY CODE`=="C"||`FORECLOSURE REO SALE INDICATOR`=="1"||`SALE TYPE CODE`=="L"||`INTERFAMILY RELATED INDICATOR`=="1"||`SHORT SALE INDICATOR`=="1")|> summarize(n=n())
+#FMVData= fullData |> filter(`PRIMARY CATEGORY CODE`=="B"||`PRIMARY CATEGORY CODE`=="C"||`FORECLOSURE REO SALE INDICATOR`=="1"||`SALE TYPE CODE`=="L"||`INTERFAMILY RELATED INDICATOR`=="1"||`SHORT SALE INDICATOR`=="1")|> 
+  #summarize(n=n())
 #print(FMVData)
-
 
 #Currently FMV DATA took a while to realize that the reason sale type code was causing issues was that it had NA Values 
 #
-FMVData= fullData |> filter(`PRIMARY CATEGORY CODE`!="B"&`PRIMARY CATEGORY CODE`!="C"&`FORECLOSURE REO SALE INDICATOR`!="1"& `INTERFAMILY RELATED INDICATOR`!="1" & `SHORT SALE INDICATOR`!="1") |>filter(`SALE TYPE CODE`!="L"||is.na(`SALE TYPE CODE`))
+FMVData = fullData |> 
+  filter(`PRIMARY CATEGORY CODE`!="B"&`PRIMARY CATEGORY CODE`!="C"&`FORECLOSURE REO SALE INDICATOR`!="1"& `INTERFAMILY RELATED INDICATOR`!="1" & `SHORT SALE INDICATOR`!="1") |>
+  filter(`SALE TYPE CODE`!="L"||is.na(`SALE TYPE CODE`))
 #print(FMVData)
 
 
-
-
-
 #THIS SECTION looks at each group to see the most common type of each and which codes exist 
-#Primtype= fullData |> group_by(`PRIMARY CATEGORY CODE`) |> summarize(n=n())
+#Primtype= fullData |> group_by(`PRIMARY CATEGORY CODE`) |> 
+#summarize(n=n())
 #print(Primtype)
 
 #Cattype= fullData |> group_by(`DEED CATEGORY TYPE CODE`) |> summarize(n=n())
@@ -83,9 +95,10 @@ FMVData= fullData |> filter(`PRIMARY CATEGORY CODE`!="B"&`PRIMARY CATEGORY CODE`
 #foreclosure = fullData |> group_by(`FORECLOSURE REO SALE INDICATOR`) |> summarize(n=n())
 #print(foreclosure)
 
-#filters data to show how many deeds each state has at least listed 
-StateData= fullData |> group_by(`DEED SITUS STATE - STATIC`) |> summarize(n = n())
-
+#Filters data to show how many deeds each state has at least listed 
+StateData = fullData |> 
+  group_by(`DEED SITUS STATE - STATIC`) |>
+  summarize(n = n())
 
 
 ##### THIS FINDS THE MEDIAN SALE DERIVED DATE YEAR FOR EACH STATE 
@@ -93,15 +106,22 @@ StateData= fullData |> group_by(`DEED SITUS STATE - STATIC`) |> summarize(n = n(
 
 
 #finds the 2.5% quantile for each state 
-QuantileStateData = fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS STATE - STATIC`) |>
-summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+QuantileStateData = fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> 
+  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  group_by(`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
 
 
-#finds the 2.5% for each county 
-QuantileCountyData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS COUNTY - STATIC` ,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
-
-
-
+#finds the 2.5% Quantile for each county 
+QuantileCountyData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
+  select(`SALE DERIVED DATE`,
+         `DEED SITUS COUNTY - STATIC` ,
+         `DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
 
 # finds the number of rows 
 #result <- dbGetQuery(con, "SELECT COUNT(*) AS row_count FROM deeds")
@@ -110,135 +130,208 @@ QuantileCountyData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> sel
 # Print the row count
 #print(row_count)
 
-
 # this code helped me realize mistakes present in the data 
 #filters data to show how many deeds each state has at least listed 
 #CountyData= fullData|>filter(`DEED SITUS STATE - STATIC`!="NA")|> filter(`DEED SITUS COUNTY - STATIC`=="SAN DIEGO" & `DEED SITUS STATE - STATIC` != "CA") #|> #filter(`DEED SITUS STATE - STATIC` != "CA" ) 
 #print(CountyData)
 
 # countydata 
-CountyData= fullData |> filter(`DEED SITUS STATE - STATIC` != "NA") |> group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(n = n())
-
+CountyData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA") |> 
+  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+  summarize(n = n())
 
 # Here I realized that the county may be listed, but the state may not be but not the converse as I have seen with previous tests 
 #SANDDATA=fullData |>filter(`DEED SITUS STATE - STATIC`!="NA") |> filter(`DEED SITUS COUNTY - STATIC`=="SAN DIEGO") |> summarize(n = n())
 #print(SANDDATA)
 
 
-
 #creates tibble for each column and reports the missingness 
+#' tibbleCreator() Function
+#'
+#' @param column refers to the column in Corelogic 
+#' @param region refers to if you want the string "DEED SITUS COUNTY - STATIC" or "DEED SITUS STATE - STATIC"
+#' @param year   You must give a boolean for the parameter true means you want it on a time scale false is no 
+#'
+#' @return a table with county/state (and year) and the relevant column
+#' @export
+#'
+#' @examples tibbleCreator("SALE AMOUNT","DEED SITUS STATE - STATIC",TRUE) Creates a table with the Sale Amount, with year data per state 
 tibbleCreator= function(column, region, year) {
-#turns column into variable rather than string
-column=as.name(column)
-if(region=="DEED SITUS STATE - STATIC"){
-if(!year){
-colu=paste0(toString(column)," PRESENT")
-#filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
-region=as.name(region)
 
-data = (fullData |> group_by(region) |>filter(column !="NA") |> summarize(!!colu := n()))
+#turns column into variable rather than string
+column = as.name(column)
+
+#Checks if we want to filter by state data
+if(region == "DEED SITUS STATE - STATIC"){
+
+#Filters solely by state not year 
+  if(!year){
+
+#creates the column name 
+colu = paste0(toString(column)," PRESENT")
+
+#filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
+region = as.name(region)
+
+#Filters data to only count data that has the relevant column filled 
+data = fullData |> 
+          group_by(region) |>
+          filter(column !="NA") |> 
+          summarize(!!colu := n())
 #the above table is now being appended to the right by the total # of deeds per state 
 
+region = toString(region)
 
-region=toString(region)
-data  = left_join(data, StateData, by=region)
+#Combines tables 
+data = left_join(data, StateData, by=region)
+
+#Changes column names 
+data = data |> 
+  rename("Total Deeds" = `n`)
 
 
-data= data |> rename("Total Deeds" = `n`)
-#changes column names 
-
-
-data= data |> mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
 #Now gives the missingness 
-data=data |>  arrange(desc(`DEED SITUS STATE - STATIC`))
+data = data |> 
+  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+
+#Arranges in descending order 
+data = data |> 
+  arrange(desc(`DEED SITUS STATE - STATIC`))
 
 
 #CREATES CSV File
-column=toString(column)
-csvtitle=paste0(column,region,".csv")
+column = toString(column)
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,".csv")
 write.csv(data,csvtitle)
 return(data)}
-else{
-colu=paste0(toString(column)," PRESENT")
+
+#Filters by state and year 
+  else{
+
+colu = paste0(toString(column)," PRESENT")
+
 #filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
-region=as.name(region)
+region = as.name(region)
 
-data=fullData |> filter(column!="NA") |> filter(`DEED SITUS STATE - STATIC` != "NA") |> group_by(substr(`SALE DERIVED DATE`, 1, 4),`DEED SITUS STATE - STATIC`) |> summarize(!!colu := n())
-region=toString(region)
+data = fullData |> 
+  filter(column!="NA") |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA") |> 
+  group_by(substr(`SALE DERIVED DATE`, 1, 4),`DEED SITUS STATE - STATIC`) |> 
+  summarize(!!colu := n())
 
-data  = left_join(data, StateYearData, by=c("substr(`SALE DERIVED DATE`, 1, 4)","DEED SITUS STATE - STATIC"))
-data= data |> rename("Total Deeds" = `n`)
-data= data |> rename(`SALE DERIVED YEAR` = `substr(\`SALE DERIVED DATE\`, 1, 4)`)
+region = toString(region)
 
-data= data |> mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+data = left_join(data, StateYearData, by=c("substr(`SALE DERIVED DATE`, 1, 4)","DEED SITUS STATE - STATIC"))
+
+data = data |> 
+  rename("Total Deeds" = `n`)
+
+data = data |> 
+  rename(`SALE DERIVED YEAR` = `substr(\`SALE DERIVED DATE\`, 1, 4)`)
+
+data = data |> 
+  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+
 #Now gives the missingness 
-data=data |>  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`SALE DERIVED YEAR`))
+data = data |> 
+  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`SALE DERIVED YEAR`))
 
 #CREATES CSV File
 column=toString(column)
-csvtitle=paste0(column,region,"YEAR.csv")
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,"YEAR.csv")
+write.csv(data,csvtitle)
+
+
+return(data) }}
+
+#Filters by county data 
+else{
+
+  if(!year){
+
+region = as.name(region)
+
+colu = paste0(toString(column)," PRESENT")
+
+data = fullData |>
+  filter(column != "NA") |>
+  filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
+  group_by(region,`DEED SITUS STATE - STATIC`)  |>
+  summarize(!!colu := n()) 
+
+
+region = toString(region)       
+
+data = data|> 
+  left_join(CountyData, data, by=c(region,"DEED SITUS STATE - STATIC")) 
+
+
+data = data |>
+  rename("Total Deeds" = `n`)
+
+
+data = data |>
+  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+
+#Now gives the missingness 
+data = data |>
+  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`DEED SITUS COUNTY - STATIC`))
+
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,".csv")
+write.csv(data,csvtitle)
+
+
+return(data)}
+
+#Filters by county and year   
+  else{
+
+colu = paste0(toString(column)," PRESENT")
+#filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
+
+region = as.name(region)
+
+data = fullData |> 
+  filter(column!="NA") |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA") |> 
+  group_by(substr(`SALE DERIVED DATE`, 1, 4),
+           `DEED SITUS COUNTY - STATIC`,
+           `DEED SITUS STATE - STATIC`) |>
+  summarize(!!colu := n())
+
+
+region = toString(region) 
+
+data = left_join(data,CountyYearData, by=c("substr(`SALE DERIVED DATE`, 1, 4)","DEED SITUS COUNTY - STATIC","DEED SITUS STATE - STATIC"))  
+
+data = data |> 
+  rename("Total Deeds" = `n`)
+
+data = data |> 
+  rename(`SALE DERIVED YEAR` = `substr(\`SALE DERIVED DATE\`, 1, 4)`)
+
+data = data |> 
+  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+
+
+data = data |>  
+  arrange(desc(`DEED SITUS STATE - STATIC`),
+          desc(`DEED SITUS COUNTY - STATIC`) ,
+          desc(`SALE DERIVED YEAR`))
+
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,"YEAR.csv")
 write.csv(data,csvtitle)
 
 
 return(data)
 
   
-  }}
-else{
-if(!year){
-region=as.name(region)
-colu=paste0(toString(column)," PRESENT")
-
-data = fullData |>filter(column != "NA") |> filter(`DEED SITUS STATE - STATIC` != "NA" ) |> group_by(region,`DEED SITUS STATE - STATIC`)  |> summarize(!!colu := n()) 
-
-
-region=toString(region)       
-data= data|> left_join(CountyData, data, by=c(region,"DEED SITUS STATE - STATIC")) 
-
-
-data= data |> rename("Total Deeds" = `n`)
-
-
-data= data |> mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
-#Now gives the missingness 
-data=data |>  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`DEED SITUS COUNTY - STATIC`))
-
-#CREATES CSV File
-column=toString(column)
-csvtitle=paste0(column,region,".csv")
-write.csv(data,csvtitle)
-
-
-return(data)}
-else{
-colu=paste0(toString(column)," PRESENT")
-#filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
-region=as.name(region)
-
-data=fullData |> filter(column!="NA") |> filter(`DEED SITUS STATE - STATIC` != "NA") |> group_by(substr(`SALE DERIVED DATE`, 1, 4),`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |> summarize(!!colu := n())
-region=toString(region) 
-
-data  = left_join(data,CountyYearData, by=c("substr(`SALE DERIVED DATE`, 1, 4)","DEED SITUS COUNTY - STATIC","DEED SITUS STATE - STATIC"))  
-
-data= data |> rename("Total Deeds" = `n`)
-data= data |> rename(`SALE DERIVED YEAR` = `substr(\`SALE DERIVED DATE\`, 1, 4)`)
-
-data= data |> mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
-#Now gives the missingness 
-#data=data |>  arrange(desc(`SALE DERIVED YEAR`),desc(`DEED SITUS COUNTY - STATIC`) ,desc(`DEED SITUS STATE - STATIC`))
-data=data |>  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`DEED SITUS COUNTY - STATIC`) ,desc(`SALE DERIVED YEAR`))
-
-#CREATES CSV File
-column=toString(column)
-csvtitle=paste0(column,region,"YEAR.csv")
-write.csv(data,csvtitle)
-
-
-return(data)
-
-  
-}
-}}
+}}}
 
 #### IMPORTANT THIS NEXT SECTION CREATES TABLE FOR THE DATA ASCRIBED FOR STATE AND COUNTY
 ###Remember to add TRUE and FALSE to each tibbleCreator()
@@ -314,15 +407,27 @@ return(data)
 #print(data)
 
 # checks missingness of build year by state"
-#data=tibbleCreator("ACTUAL YEAR BUILT - STATIC","DEED SITUS STATE - STATIC")
+#data=tibbleCreator("ACTUAL YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",TRUE)
 #print(data)
 
+#CREATES CSV's in Output Folder
 
-
+#data=tibbleCreator("ACTUAL YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("BUYER OCCUPANCY CODE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("CLIP","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("DEED CATEGORY TYPE CODE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("SALE DOCUMENT TYPE  CODE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("FIPS CODE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("PRIMARY CATEGORY CODE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("PROPERTY INDICATOR CODE - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("SALE AMOUNT","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("SALE DERIVED DATE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("SALE DERIVED RECORDING DATE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("DEED SITUS CITY - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("DEED SITUS ZIP CODE - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("EFFECTIVE YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",FALSE)
 
 
 #disconnects in order to avoid garbage collecting 
 dbDisconnect(con)
-
-
 ````
