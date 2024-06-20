@@ -1,0 +1,119 @@
+````{R}
+#installs libraries
+library(DBI)
+library(dbplyr)
+library(dplyr)
+library(duckdb)
+library(duckplyr)
+library(tidyr)
+library(tidyselect)
+library(tibble)
+library(RSQLite)
+library(stringr)
+library(rlang)
+library(styler) 
+library(ggplot2)
+library(readr)
+library(forcats)
+library(tidycensus)
+library(maps)
+library(ggplot2)
+library(usmap)
+library(tigris)
+library(viridis)
+library(patchwork)
+#library mapview 
+````
+
+
+
+
+
+````{R}
+
+#data=read_csv("~/cl-validation/Output/ACTUAL YEAR BUILT - STATICDEED SITUS STATE - STATIC.csv")
+fileList=numeric(14)
+fileList=list.files()
+nameList=c("Actual Year Built", "Buyer Occupancy Code", "CLIP", "Deed Category Type", "Sale Document Type Code", "FIPS Code", "Primary Category Code", "Property Indicator Code", "Sale Amount", "Sale Derived Date", "Sale Derived Recording Date", "City", "Zip Code", "Effective Year Built")
+
+
+
+
+#for(i in 1:14){
+#data=read_csv(fileList[i])
+#newTitle=paste0("% Missingness of ",nameList[i]," Per State")
+#plot = ggplot(data, aes(x = X..missing, y = fct_reorder(DEED.SITUS.STATE...STATIC, X..missing, .desc = TRUE))) +
+#  geom_point()+scale_x_continuous(limits = c(0, 100))+labs(
+#   x = "% Missing ",
+#    y = "State Abbr.",
+#   title = newTitle,
+#  )
+#print(plot)
+#}
+
+
+
+
+
+
+quantData <- read.csv("~/cl-validation/Output/QuantileStateData")
+joined_data <- left_join(quantData, shift_geometry(states(cb=TRUE)), 
+                          by = c(DEED.SITUS.STATE...STATIC = "STUSPS"), 
+                          keep = TRUE)
+
+
+ggplot() +
+  geom_sf(data = joined_data, aes(fill = quantile2.5Year, geometry = geometry)) +
+ scale_fill_distiller(palette = "RdYlGn") +
+  theme_minimal() +
+  labs(fill = "Quantile 2.5% Year for Sale Derived Year")+ 
+  theme_void()
+
+
+quantiData <- read.csv("~/cl-validation/Output/QuantileArmsStateData")
+joinedi_data <- left_join(quantiData, shift_geometry(states(cb=TRUE)), 
+                          by = c(DEED.SITUS.STATE...STATIC = "STUSPS"), 
+                          keep = TRUE)
+
+
+ggplot() +
+  geom_sf(data = joinedi_data, aes(fill = quantile2.5Year, geometry = geometry)) +
+ scale_fill_distiller(palette = "RdYlGn") +
+  theme_minimal() +
+  labs(fill = "2.5% Quantile of sales year, arms-length sales")+ 
+  theme_void()
+
+
+
+````
+
+````{R}
+quantData <- read.csv("~/cl-validation/Output/QuantileArmsCountyData")
+
+# Load counties spatial data
+counties <- counties(cb = TRUE) |> shift_geometry()  # Assuming this loads the spatial data correctly
+counties=counties |> mutate(NAME=toupper(NAME))
+#print(counties)
+
+ 
+join_data <- left_join(
+  quantData, 
+  counties, 
+  by = c("DEED.SITUS.COUNTY...STATIC" = "NAME", "DEED.SITUS.STATE...STATIC" = "STUSPS"), 
+  keep = TRUE
+)
+
+
+
+# Plot with ggplot2
+ggplot() +
+ geom_sf(data = join_data, aes(fill = quantile2.5Year,geometry=geometry)) +
+  scale_fill_distiller(palette = "RdYlGn") +
+  theme_minimal() +
+  labs(fill = "2.5% Quantile of sales year, arms-length sales") +
+  theme_void() 
+ 
+
+
+
+````
