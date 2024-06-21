@@ -12,7 +12,7 @@ library(RSQLite)
 library(stringr)
 library(rlang)
 library(styler) 
-#sf
+library(sf)
 
 ````
 
@@ -32,6 +32,7 @@ statenewabb = c("DC", state.abb)
 fullData = tbl(con, "deeds")
 fullData = fullData |> 
   filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+#print(fullData)
 
 #Creates Table filtering deed data for each state and year 
 StateYearData = fullData |> 
@@ -39,6 +40,8 @@ StateYearData = fullData |>
   group_by(substr(`SALE DERIVED DATE`,1,4),`DEED SITUS STATE - STATIC`) |>
   summarize(n=n())
 
+#Miami=fullData |> filter(`DEED SITUS CITY - STATIC`=="MIAMI") |> filter(as.numeric(`ACTUAL YEAR BUILT - STATIC`)>1997)
+#print(Miami)
 
 #Creates Table filtering deed data for each county and year 
 CountyYearData = fullData |>
@@ -106,12 +109,24 @@ StateData = fullData |>
 
 
 #finds the 2.5% quantile for each state 
-QuantileStateData = fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> 
+QuantileStateData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
   select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
   mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
   group_by(`DEED SITUS STATE - STATIC`) |>
   summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
 
+#csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileStateData")
+#write.csv(QuantileStateData,csvtitle)
+
+QuantileArmsStateData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  group_by(`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+
+#csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsStateData")
+#write.csv(QuantileArmsStateData,csvtitle)
 
 #finds the 2.5% Quantile for each county 
 QuantileCountyData = fullData |> 
@@ -122,6 +137,18 @@ QuantileCountyData = fullData |>
   mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
   group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
   summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+
+QuantileArmsCountyData=fullData |> 
+  filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+  select(`SALE DERIVED DATE`,
+         `DEED SITUS COUNTY - STATIC` ,
+         `DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  filter(as.numeric(`SALE DERIVED YEAR`)>1970) |>
+  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsCountyData")
+write.csv(QuantileArmsCountyData,csvtitle)
 
 # finds the number of rows 
 #result <- dbGetQuery(con, "SELECT COUNT(*) AS row_count FROM deeds")
@@ -141,6 +168,13 @@ CountyData = fullData |>
   group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
   summarize(n = n())
 
+# does it by fips rather than county since fips may be more accurate 
+CountyFipsData=fullData |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA"& `FIPS CODE`!="NA") |> 
+  group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  summarize(n = n())
+#print(CountyFipsData)
+
 # Here I realized that the county may be listed, but the state may not be but not the converse as I have seen with previous tests 
 #SANDDATA=fullData |>filter(`DEED SITUS STATE - STATIC`!="NA") |> filter(`DEED SITUS COUNTY - STATIC`=="SAN DIEGO") |> summarize(n = n())
 #print(SANDDATA)
@@ -157,7 +191,7 @@ CountyData = fullData |>
 #' @export
 #'
 #' @examples tibbleCreator("SALE AMOUNT","DEED SITUS STATE - STATIC",TRUE) Creates a table with the Sale Amount, with year data per state 
-tibbleCreator= function(column, region, year) {
+tibbleCreator= function(column, region, year, fips) {
 
 #turns column into variable rather than string
 column = as.name(column)
@@ -174,11 +208,12 @@ colu = paste0(toString(column)," PRESENT")
 #filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
 region = as.name(region)
 
-#Filters data to only count data that has the relevant column filled 
+#Filters data to only count data that has the relevant column filled checks if you want fips code 
+
 data = fullData |> 
           group_by(region) |>
           filter(column !="NA") |> 
-          summarize(!!colu := n())
+         summarize(!!colu := n())
 #the above table is now being appended to the right by the total # of deeds per state 
 
 region = toString(region)
@@ -254,12 +289,12 @@ region = as.name(region)
 
 colu = paste0(toString(column)," PRESENT")
 
+if(!fips){
 data = fullData |>
   filter(column != "NA") |>
   filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
   group_by(region,`DEED SITUS STATE - STATIC`)  |>
   summarize(!!colu := n()) 
-
 
 region = toString(region)       
 
@@ -284,7 +319,40 @@ csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,".csv")
 write.csv(data,csvtitle)
 
 
-return(data)}
+return(data)
+}
+else {
+data = fullData |>
+  filter(column != "NA"& `FIPS CODE`!="NA") |>
+  filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
+  group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  summarize(!!colu := n()) 
+print(data)
+      
+
+data = data|> 
+  left_join(CountyFipsData, data, by=c("DEED SITUS STATE - STATIC","FIPS CODE")) 
+
+
+data = data |>
+  rename("Total Deeds" = `n`)
+
+
+data = data |>
+  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+
+#Now gives the missingness 
+data = data |>
+  arrange(desc(`DEED SITUS STATE - STATIC`))
+
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,".csv")
+write.csv(data,csvtitle)
+
+
+return(data)
+}}
 
 #Filters by county and year   
   else{
@@ -426,6 +494,10 @@ return(data)
 #data=tibbleCreator("DEED SITUS CITY - STATIC","DEED SITUS STATE - STATIC",FALSE)
 #data=tibbleCreator("DEED SITUS ZIP CODE - STATIC","DEED SITUS STATE - STATIC",FALSE)
 #data=tibbleCreator("EFFECTIVE YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("FIPS CODE","DEED SITUS COUNTY - STATIC",FALSE)
+
+#print(tibbleCreator("SALE AMOUNT","DEED COUNTY STATE - STATIC",TRUE,TRUE))
+
 
 
 #disconnects in order to avoid garbage collecting 
