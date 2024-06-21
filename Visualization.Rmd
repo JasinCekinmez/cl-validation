@@ -22,7 +22,7 @@ library(usmap)
 library(tigris)
 library(viridis)
 library(patchwork)
-#library mapview 
+library(mapview) 
 ````
 
 
@@ -113,6 +113,40 @@ ggplot() +
   labs(fill = "2.5% Quantile of sales year, arms-length sales") +
   theme_void() 
  
+
+
+
+````
+
+````{R}
+###EXAMINE 
+#1990 raises some new questions what about population growth it is binary 0 vs 1 not 1-9 like 2023
+
+RUCcodes=read_csv("~/cl-validation/Output/Ruralurbancontinuumcodes2023.csv")
+RUCcodes1990=read_csv("~/cl-validation/Output/1990.csv")
+#print(RUCcodes1990)
+
+RUCcodes=RUCcodes |> filter(Attribute=="RUCC_2023")
+Salecsv=read_csv("~/cl-validation/Output/SaleAmt.csv")
+RUCcodes= RUCcodes |> mutate(County_Name = str_replace_all(County_Name, " County", "") %>% toupper())
+#print(RUCcodes)
+
+#print(Salecsv)
+#print(RUCcodes)
+missing=anti_join(RUCcodes,Salecsv, by= c("FIPS" = "FIPS.CODE"))
+print(missing)
+jointData=left_join(Salecsv,RUCcodes, by = c("DEED.SITUS.STATE...STATIC" = "State", "FIPS.CODE" = "FIPS"), 
+  keep = TRUE)
+jointData=jointData |> filter(FIPS!="NA") |> select(-c(County_Name:State)) |> select(-c(Attribute:Attribute)) 
+#print(jointData)
+SaleCounty=read_csv("~/cl-validation/Output/SaleAmtCounty.csv")
+joinData=left_join(SaleCounty,RUCcodes, by = c("DEED.SITUS.STATE...STATIC" = "State", "DEED.SITUS.COUNTY...STATIC" = "County_Name"), 
+  keep = TRUE)
+joinData= joinData |> filter(Value!="NA")
+#print(joinData)
+
+#print(anti_join(jointData,joinData, by="FIPS"))
+
 
 
 
