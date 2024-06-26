@@ -69,9 +69,9 @@ CountyYearData = fullData |>
 
 #Currently FMV DATA took a while to realize that the reason sale type code was causing issues was that it had NA Values 
 #
-FMVData = fullData |> 
-  filter(`PRIMARY CATEGORY CODE`!="B"&`PRIMARY CATEGORY CODE`!="C"&`FORECLOSURE REO SALE INDICATOR`!="1"& `INTERFAMILY RELATED INDICATOR`!="1" & `SHORT SALE INDICATOR`!="1") |>
-  filter(`SALE TYPE CODE`!="L"||is.na(`SALE TYPE CODE`))
+#FMVData = fullData |> 
+#  filter(`PRIMARY CATEGORY CODE`!="B"&`PRIMARY CATEGORY CODE`!="C"&`FORECLOSURE REO SALE INDICATOR`!="1"& `INTERFAMILY RELATED INDICATOR`!="1" & `SHORT SALE INDICATOR`!="1") |>
+ # filter(`SALE TYPE CODE`!="L"||is.na(`SALE TYPE CODE`))
 #print(FMVData)
 
 
@@ -109,46 +109,49 @@ StateData = fullData |>
 
 
 #finds the 2.5% quantile for each state 
-QuantileStateData = fullData |> 
-  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
-  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
-  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
-  group_by(`DEED SITUS STATE - STATIC`) |>
-  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+#QuantileStateData = fullData |> 
+#  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
+#  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
+#  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+#  group_by(`DEED SITUS STATE - STATIC`) |>
+#  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
 
 #csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileStateData")
 #write.csv(QuantileStateData,csvtitle)
 
-QuantileArmsStateData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
-  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
-  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
-  group_by(`DEED SITUS STATE - STATIC`) |>
-  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+#QuantileArmsStateData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+#  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
+#  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+#  group_by(`DEED SITUS STATE - STATIC`) |>
+#  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+
 
 #csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsStateData")
 #write.csv(QuantileArmsStateData,csvtitle)
 
 #finds the 2.5% Quantile for each county 
-QuantileCountyData = fullData |> 
-  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
-  select(`SALE DERIVED DATE`,
-         `DEED SITUS COUNTY - STATIC` ,
-         `DEED SITUS STATE - STATIC`) |> 
-  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
-  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
-  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+#QuantileCountyData = fullData |> 
+#  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
+#  select(`SALE DERIVED DATE`,
+#         `DEED SITUS COUNTY - STATIC` ,
+#         `DEED SITUS STATE - STATIC`) |> 
+  #mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  #group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+  #summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
 
-QuantileArmsCountyData=fullData |> 
-  filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
-  select(`SALE DERIVED DATE`,
-         `DEED SITUS COUNTY - STATIC` ,
-         `DEED SITUS STATE - STATIC`) |> 
-  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
-  filter(as.numeric(`SALE DERIVED YEAR`)>1970) |>
-  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
-  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
-csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsCountyData")
-write.csv(QuantileArmsCountyData,csvtitle)
+
+#UNCOMMENT WHEN NECESSARY 
+#QuantileArmsCountyData=fullData |> 
+#  filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+# select(`SALE DERIVED DATE`,
+ #        `DEED SITUS COUNTY - STATIC` ,
+ #        `DEED SITUS STATE - STATIC`) |> 
+ # mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+ # filter(as.numeric(`SALE DERIVED YEAR`)>1970) |>
+ # group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+ # summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+#csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsCountyData")
+#write.csv(QuantileArmsCountyData,csvtitle)
 
 # finds the number of rows 
 #result <- dbGetQuery(con, "SELECT COUNT(*) AS row_count FROM deeds")
@@ -327,7 +330,7 @@ data = fullData |>
   filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
   group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
   summarize(!!colu := n()) 
-print(data)
+
       
 
 data = data|> 
@@ -498,7 +501,178 @@ return(data)
 
 #print(tibbleCreator("SALE AMOUNT","DEED COUNTY STATE - STATIC",TRUE,TRUE))
 
+### FOR ARMS LENGTH SALES 
 
+#CountyFipsTypeAData=fullData |> 
+ #filter(`DEED SITUS STATE - STATIC` != "NA"& `FIPS CODE`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+  #group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  #summarize(n = n())
+#print(CountyFipsTypeAData)
+
+#data = fullData |>
+ # filter(`FIPS CODE`!="NA"&`PRIMARY CATEGORY CODE`=="A"&`SALE AMOUNT`!="NA") |>
+ #filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
+ #group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+ # summarize("Sale Amount Present" := n()) 
+
+      
+
+#data = data|> 
+  #left_join(CountyFipsTypeAData, data, by=c("DEED SITUS STATE - STATIC","FIPS CODE")) 
+
+
+#data = data |>
+ # rename("Total Deeds" = `n`)
+
+
+#data = data |>
+#  mutate("% missing"= round((100* (1-(`Sale Amount Present`)/(`Total Deeds`))), digits=2)) 
+
+#Now gives the missingness 
+#data = data |>
+# arrange(desc(`DEED SITUS STATE - STATIC`))
+
+#print(data)
+
+#CREATES CSV File
+#csvtitle=paste0("/home/jc9154/cl-validation/Output/","SaleAmountTypeA",".csv")
+#write.csv(data,csvtitle)
+
+#missingFips=fullData |> filter(is.na(`FIPS CODE`)) |> mutate("CITY PRESENT"=is.na(`DEED SITUS CITY - STATIC`), .before = CLIP) |> mutate("ZIPCODE PRESENT"=is.na(`DEED SITUS ZIP CODE - STATIC`), .before = CLIP) |> mutate("County Present"=is.na(`DEED SITUS COUNTY - STATIC`), .before = CLIP) |> mutate("State Present"= is.na(`DEED SITUS STATE - STATIC`), .before = CLIP) |> mutate("Street Present"=is.na(`DEED SITUS STREET NAME - STATIC`), .before = CLIP) |> filter(`Street Present`==TRUE & `CITY PRESENT`==TRUE & `ZIPCODE PRESENT` == TRUE) 
+
+
+#I got the two tables in the doc by simply adding or removing ! from Street NOT Present 
+#missingFipsProp=fullData |> filter(is.na(`FIPS CODE`)) |> mutate("CITY NOT PRESENT"=is.na(`DEED SITUS CITY - STATIC`), .before = CLIP) |> mutate("ZIPCODE NOT PRESENT"=is.na(`DEED SITUS ZIP CODE - STATIC`), .before = CLIP) |> mutate("Street NOT Present"=is.na(`DEED SITUS STREET NAME - STATIC`), .before = CLIP) |> filter(!(`Street NOT Present`)) |> group_by(`Street NOT Present`,`CITY NOT PRESENT`,`ZIPCODE NOT PRESENT`) |> summarise(n=(n()), .groups = "drop") |> mutate(prop=round((n/sum(n)),digits = 3))
+
+#missingFips = missingFips |> filter(is.na(`APN SEQUENCE NUMBER`)==FALSE) |> summarise(n=n())
+
+
+#compData=fullData|> filter(is.na(`FIPS`)==FALSE) |> summarise(n=n())
+#fullData=fullData|> summarise(n=n())
+#print(compData)
+#print(fullData)
+
+#print(missingFipsProp)
+
+# THOUGHT PROCESS 
+#LolliFipsCounty= fullData |> filter(is.na(`FIPS CODE`)) |> summarise(n=n())
+#Lolli!FipsCounty= fullData |> filter(is.na(`FIPS CODE`)) |> summarise(n=n())
+#LolliFipsCountyLOL=fullData |> filter(is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS CITY - STATIC`))) |> summarise(n=n())
+#FIPSMissing=LolliFipsCounty |> pull(n)
+#FIPSpres=Lolli!FipsCounty|> pull(n)
+#CityComplete=LolliFipsCountyLOL |> pull(n)
+#percentage=round((CityComplete/FIPSMissing),digits = 3)
+#percentageAv=round((CityComplete/FIPSMissing),digits = 3)
+
+
+#MissingFips=fullData |> filter(is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
+#PresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
+#CityPresentNonFips= fullData |> filter(is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS CITY - STATIC`))) |> summarise(n=n())|> pull(n)
+#CityPresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS CITY - STATIC`))) |> summarise(n=n())|> pull(n)
+
+#CityNonFips=CityPresentNonFips/MissingFips
+#CityFips=CityPresentFips/PresentFips
+
+#MissingFips=fullData |> filter(is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
+#PresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
+#StreetPresentNonFips= fullData |> filter(is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS STREET NAME - STATIC`))) |> summarise(n=n())|> pull(n)
+#StreetPresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS STREET NAME - STATIC`))) |> summarise(n=n())|> pull(n)
+
+#StreetNonFips=StreetPresentNonFips/MissingFips
+#StreetFips=StreetPresentFips/PresentFips
+
+
+
+#MissingFips=fullData |> filter(is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
+#PresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
+#ZipCodePresentNonFips= fullData |> filter(is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS ZIP CODE - STATIC`))) |> summarise(n=n())|> pull(n)
+#ZipCodePresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS ZIP CODE - STATIC`))) |> summarise(n=n())|> pull(n)
+
+#ZipCodeNonFips=ZipCodePresentNonFips/MissingFips
+#ZipCodeFips=ZipCodePresentFips/PresentFips
+
+
+#NonFips=c(CityNonFips,StreetNonFips,ZipCodeNonFips)
+#Fips=c(CityFips,StreetFips,ZipCodeFips)
+#LolliData=data.frame(NonFips=NonFips,
+ #                     Fips=Fips)
+#row.names(LolliData)=c("City","Street","ZipCode")
+#print(LolliData)
+
+#summarize(prop=) add columns to fulldata easuer than function
+
+#ggplot(LolliData) + geom_segment( aes(x=c("City","Street","ZipCode"), xend=c("City","Street","ZipCode"), y=NonFips, yend=Fips), color="grey") +
+ # geom_point( aes(x=c("City","Street","ZipCode"), y=NonFips), color=rgb(0.2,0.7,0.1,0.5), size=3 ) +
+ # geom_point( aes(x=c("City","Street","ZipCode"), y=Fips), color=rgb(0.7,0.2,0.1,0.5), size=3 ) +
+ # coord_flip()+
+ # theme(
+ #   legend.position = "none",
+ # ) +
+ # xlab("Columns") +
+  #ylab("% Complete")+ylim(0,1)
+
+#ColumnNameList=colnames(fullData)
+#missing=numeric(length(ColumnNameList))
+#nonmissing=numeric(length(ColumnNameList))
+
+
+
+LollipopCreator= function(column,start,end){
+ColumnNameList = colnames(fullData)[start:end]
+  missing = numeric(length(ColumnNameList))
+  nonmissing = numeric(length(ColumnNameList))  
+
+column = as.name(column)
+MissingColumn=fullData |> filter(is.na(column)) 
+PresentColumn=fullData |> filter(!is.na(column))
+MissingColumnValue=fullData |> filter(is.na(column)) |> summarise(n=n()) |> pull(n)
+PresentColumnValue=fullData |> filter(!is.na(column)) |> summarise(n=n()) |> pull(n)
+for(i in 1:length(ColumnNameList)){
+  
+ValuePresentNonColumn= MissingColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> summarise(n=n())|> pull(n)
+ValuePresentColumn=PresentColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> summarise(n=n())|> pull(n)
+
+ValueNonColumn=ValuePresentNonColumn/MissingColumnValue
+ValueColumn=ValuePresentColumn/PresentColumnValue  
+
+missing[i]=ValueNonColumn
+nonmissing[i]=ValueColumn
+}
+LollipopData=data.frame(MissingSomething=missing, PresentColumn=nonmissing)
+row.names(LollipopData)=ColumnNameList
+
+ ggplot(LollipopData) + 
+    geom_segment(aes(x = ColumnNameList, xend = ColumnNameList, y = MissingSomething, yend = PresentColumn), color = "grey") +
+    geom_point(aes(x = ColumnNameList, y = MissingSomething), color = rgb(0.7, 0.2, 0.1, 0.5), size = 3) +
+    geom_point(aes(x = ColumnNameList, y = PresentColumn), color = rgb(0.2, 0.7, 0.1, 0.5), size = 3) +
+    coord_flip() +
+    labs(
+      x = "Columns",
+      y = "% Complete",
+      title = paste("% Complete given ", column, "vs. Complete no ", column),
+      subtitle = "Missing vs. Present values across columns", caption = paste("RED=Missing ",column, "GREEN=Present ",column) 
+    ) +
+    ylim(0, 1) +
+    theme_minimal() +
+    theme(
+      legend.position = "right",  # Adjust legend position as needed
+      plot.title = element_text(hjust = 0.5),  # Center the title
+      plot.subtitle = element_text(hjust = 0.5)  # Center the subtitle
+    )}
+
+LollipopCreator("SALE AMOUNT",10,25)
+
+
+
+#print(ZipCodeNonFips)
+#print(ZipCodeFips)
+
+#print(LolliFipsCounty)
+#print(LolliFips)
+
+
+#kodzebue=fullData |> filter(`DEED SITUS CITY - STATIC`=="KOTZEBUE")
+#print(kodzebue)
 
 #disconnects in order to avoid garbage collecting 
 dbDisconnect(con)
