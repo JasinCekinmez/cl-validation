@@ -23,6 +23,7 @@ library(tigris)
 library(viridis)
 library(patchwork)
 library(mapview) 
+library(purrr)
 ````
 
 
@@ -121,22 +122,36 @@ ggplot() +
 ````{R}
 ###EXAMINE 
 #1990 raises some new questions what about population growth it is binary 0 vs 1 not 1-9 like 2023
+# 0 =non metro, 1= metro 
+# GREAT IDEA 0-20 % 20-40% fill in proportionally count 
 
 RUCcodes=read_csv("~/cl-validation/Output/Ruralurbancontinuumcodes2023.csv")
 RUCcodes1990=read_csv("~/cl-validation/Output/1990.csv")
 #print(RUCcodes1990)
+#print(RUCcodes)
+RUCcodes1990=RUCcodes1990 |> mutate(FIPS =substr(`FIPS state-county-tract code`,1,5)) |>  distinct(`FIPS`,.keep_all = TRUE) |> select(-(`FIPS state-county-tract code`:`Census tract land area, square miles, 1990`))
+#print(RUCcodes1990)
+
 
 RUCcodes=RUCcodes |> filter(Attribute=="RUCC_2023")
 Salecsv=read_csv("~/cl-validation/Output/SaleAmt.csv")
 RUCcodes= RUCcodes |> mutate(County_Name = str_replace_all(County_Name, " County", "") %>% toupper())
 #print(RUCcodes)
+SaleTypeAcsv=read_csv("~/cl-validation/Output/SaleAmountTypeA.csv")
 
 #print(Salecsv)
 #print(RUCcodes)
 missing=anti_join(RUCcodes,Salecsv, by= c("FIPS" = "FIPS.CODE"))
-print(missing)
+Missing=anti_join(RUCcodes1990,Salecsv, by= c("FIPS" = "FIPS.CODE"))
+#print(missing)
+#print(Missing)
 jointData=left_join(Salecsv,RUCcodes, by = c("DEED.SITUS.STATE...STATIC" = "State", "FIPS.CODE" = "FIPS"), 
   keep = TRUE)
+
+#Salecsv=Salecsv |>mutate(lookup_code(DEED.SITUS.STATE...STATIC))
+
+#Data1990=left_join(RUCcodes1990,Salecsv, by= c("FIPS" = "FIPS.CODE"), keep = TRUE)
+#print(Data1990)
 jointData=jointData |> filter(FIPS!="NA") |> select(-c(County_Name:State)) |> select(-c(Attribute:Attribute)) 
 #print(jointData)
 SaleCounty=read_csv("~/cl-validation/Output/SaleAmtCounty.csv")
@@ -147,6 +162,65 @@ joinData= joinData |> filter(Value!="NA")
 
 #print(anti_join(jointData,joinData, by="FIPS"))
 
+
+
+
+#fips_codes=fips_codes |> select(c(state,state_code))
+#fips_codes=as_tibble(fips_codes)
+Salecsv=left_join(Salecsv,fips_codes,by= c("DEED.SITUS.STATE...STATIC" = "state"),keep = TRUE)
+Salecsv=Salecsv |> distinct(FIPS.CODE,state,.keep_all = TRUE)
+#print(Salecsv)
+RealJoinData=left_join(Salecsv,RUCcodes1990,by= c("FIPS.CODE" = "FIPS"),keep = TRUE)
+RealJoinData= RealJoinData |> mutate(B=substr(FIPS.CODE,1,2)==state_code)
+RealJoinData= RealJoinData |> filter(B==TRUE)
+RealJoinData= RealJoinData |> select(-(state:state_code))
+RealJoinData= RealJoinData |> select(-(FIPS:B))
+RealJoinData= RealJoinData |> mutate("Complete %"=(100-X..missing))
+RealJoinData=RealJoinData |> rename("Metro Status"=`County metropolitan status, 1993 (1=metro,0=nonmetro)`)
+RealJoinData= RealJoinData |> filter(`Metro Status`!="NA")
+RealJoinData=RealJoinData |> select(-(...1))
+RealJoinData=RealJoinData |> mutate("Metro Status"=as.character(`Metro Status`))
+
+ggplot(RealJoinData, aes(x=`Complete %`,fill = `Metro Status`)) +
+ geom_density(alpha = 0.5)
+
+
+jointData = jointData |> select(-(...1)) |> mutate("Complete %"=(100-X..missing))
+ggplot(jointData, aes(x=`Complete %`,fill = `Value`)) +
+ geom_density(alpha = 0.5)
+
+jointData = jointData |> mutate("Value"=as.numeric(`Value`)) |> mutate(Value= case_when(
+  Value>3 ~ 0,
+  Value<=3 ~ 1
+  
+)) |> mutate("Value"=as.character(`Value`)) 
+jointData=jointData|> filter(Value !="NA")
+print(jointData)
+
+ggplot(jointData, aes(x=`Complete %`,fill = `Value`)) +
+ geom_density(alpha = 0.5)
+
+  
+jointTypeAData9=left_join(SaleTypeAcsv,RUCcodes, by = c("DEED.SITUS.STATE...STATIC" = "State", "FIPS.CODE" = "FIPS"), 
+  keep = TRUE)
+jointTypeAData9=jointTypeAData9 |> filter(FIPS!="NA") |> select(-c(County_Name:State)) |> select(-c(Attribute:Attribute))
+jointTypeAData9 = jointTypeAData9 |> select(-(...1)) |> mutate("Complete %"=(100-X..missing))
+jointTypeAData9=jointTypeAData9|> filter(Value !="NA")
+ggplot(jointTypeAData9, aes(x=`Complete %`,fill = `Value`)) +
+ geom_density(alpha = 0.5)
+
+jointTypeAData=left_join(SaleTypeAcsv,RUCcodes, by = c("DEED.SITUS.STATE...STATIC" = "State", "FIPS.CODE" = "FIPS"), 
+  keep = TRUE)
+jointTypeAData=jointTypeAData |> filter(FIPS!="NA") |> select(-c(County_Name:State)) |> select(-c(Attribute:Attribute)) 
+jointTypeAData = jointTypeAData |> select(-(...1)) |> mutate("Complete %"=(100-X..missing))
+jointTypeAData = jointTypeAData |> mutate("Value"=as.numeric(`Value`)) |> mutate(Value= case_when(
+  Value>3 ~ 0,
+  Value<=3 ~ 1)) |> mutate("Value"=as.character(`Value`)) 
+
+jointTypeAData=jointTypeAData|> filter(Value !="NA")
+#print(jointTypeAData)
+ggplot(jointTypeAData, aes(x=`Complete %`,fill = `Value`)) +
+ geom_density(alpha = 0.5)
 
 
 
