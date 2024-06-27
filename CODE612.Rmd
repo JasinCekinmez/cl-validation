@@ -1,3 +1,12 @@
+---
+title: "REMATCH+ Project"
+author: "Jasin Cekinmez"
+date: "2024-06-27"
+output: html_document 
+---
+
+### Installs Libraries 
+
 ````{R}
 #installs libraries
 library(DBI)
@@ -18,21 +27,34 @@ library(sf)
 
 
 
+## TibbleCreator() and its setup
+
+#### The goal of TibbleCreator() is to create a table and csv that checks the missingness for the column provided in fullData hence the parameter column. It also can do it on a state or county basis with the region parameter. The year parameter asks whether you want on a yearly basis or overall. FIPS parameter asks whether you want it on FIPS or county. For Column you must provide one of the 103 columns in fullData that matches exactly, for the Region Parameter, you must either put `DEED SITUS STATE - STATIC` for state or `DEED SITUS COUNTY - STATIC` for county, for the YEAR parameter you must input TRUE if you want it on a yearly basis and false if not, likewise for FIPS you need to put in TRUE if you want to do it by FIPS rather than county and False if not. fullDaa, StateYearData, CountyYearData, etc are necessities for TibbleCreator() to work since they are called in it. ALSO** FIPS only works on County since it is on a county basis, the function will still work but have no difference if FIPS was set to False.
 
 ````{R}
-#Creates a database connection to cl.db which is the unzipped db file with deeds as the table
-#db file
+#Creates a database connection to cl.db which is the unzipped db file with deeds as the table and is a db file
 con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
 
-
-#Adds DC to state.abb 
+#Adds DC to state.abb and the goal of this is to not included territories
 statenewabb = c("DC", state.abb)
 
 #Takes the database connection and turns it into a tibble and filters out non states and DC and ones that do not exist
 fullData = tbl(con, "deeds")
 fullData = fullData |> 
   filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
-#print(fullData)
+
+
+#Filters data to show how many deeds each state has at least listed 
+StateData = fullData |> 
+  group_by(`DEED SITUS STATE - STATIC`) |>
+  summarize(n = n())
+
+#Filters data to show how many deeds each county has at least listed  
+CountyData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA") |> 
+  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+  summarize(n = n())
+
 
 #Creates Table filtering deed data for each state and year 
 StateYearData = fullData |> 
@@ -40,8 +62,7 @@ StateYearData = fullData |>
   group_by(substr(`SALE DERIVED DATE`,1,4),`DEED SITUS STATE - STATIC`) |>
   summarize(n=n())
 
-#Miami=fullData |> filter(`DEED SITUS CITY - STATIC`=="MIAMI") |> filter(as.numeric(`ACTUAL YEAR BUILT - STATIC`)>1997)
-#print(Miami)
+
 
 #Creates Table filtering deed data for each county and year 
 CountyYearData = fullData |>
@@ -51,136 +72,13 @@ CountyYearData = fullData |>
            `DEED SITUS STATE - STATIC`) |> 
   summarize(n=n())
 
-#Examining Fips Code
-#fips = fullData |>filter(!is.na(`FIPS CODE`)) |>
-#  group_by(`FIPS CODE`) 
-#print(fips)
 
-#Takes out lowercase state abbreviations made me realize there are quite a bit of different non state abbreviations 
-#,yet there are still many typo caps 
-#caps=fullData |> filter(str_detect(`DEED SITUS STATE - STATIC`,"[A-Z][A-Z]")||is.na(`DEED SITUS STATE - STATIC`)) |>      group_by(`DEED SITUS STATE - STATIC`) |> 
-  #summarize(n = n())
-#print(caps)
-
-#displays number of NON FMV data
-#FMVData= fullData |> filter(`PRIMARY CATEGORY CODE`=="B"||`PRIMARY CATEGORY CODE`=="C"||`FORECLOSURE REO SALE INDICATOR`=="1"||`SALE TYPE CODE`=="L"||`INTERFAMILY RELATED INDICATOR`=="1"||`SHORT SALE INDICATOR`=="1")|> 
-  #summarize(n=n())
-#print(FMVData)
-
-#Currently FMV DATA took a while to realize that the reason sale type code was causing issues was that it had NA Values 
-#
-#FMVData = fullData |> 
-#  filter(`PRIMARY CATEGORY CODE`!="B"&`PRIMARY CATEGORY CODE`!="C"&`FORECLOSURE REO SALE INDICATOR`!="1"& `INTERFAMILY RELATED INDICATOR`!="1" & `SHORT SALE INDICATOR`!="1") |>
- # filter(`SALE TYPE CODE`!="L"||is.na(`SALE TYPE CODE`))
-#print(FMVData)
-
-
-#THIS SECTION looks at each group to see the most common type of each and which codes exist 
-#Primtype= fullData |> group_by(`PRIMARY CATEGORY CODE`) |> 
-#summarize(n=n())
-#print(Primtype)
-
-#Cattype= fullData |> group_by(`DEED CATEGORY TYPE CODE`) |> summarize(n=n())
-#print(Cattype)
-
-#SaleType= fullData |> group_by(`SALE TYPE CODE`) |> summarize(n=n())
-#print(SaleType)
-
-#Saledoc = fullData |> group_by(`SALE DOCUMENT TYPE  CODE`) |> summarize(n=n())
-#print(Saledoc)
-
-#family= fullData |> group_by(`INTERFAMILY RELATED INDICATOR`) |> summarize(n=n())
-#print(family)
-
-#short= fullData |> group_by(`SHORT SALE INDICATOR`) |> summarize(n=n())
-#print(short)
-
-#foreclosure = fullData |> group_by(`FORECLOSURE REO SALE INDICATOR`) |> summarize(n=n())
-#print(foreclosure)
-
-#Filters data to show how many deeds each state has at least listed 
-StateData = fullData |> 
-  group_by(`DEED SITUS STATE - STATIC`) |>
-  summarize(n = n())
-
-
-##### THIS FINDS THE MEDIAN SALE DERIVED DATE YEAR FOR EACH STATE 
-#QuartileData=fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS STATE - STATIC`) |> select(-`SALE DERIVED DATE`) |> summarize(Median = median(as.numeric(`SALE DERIVED YEAR`),na.rm = TRUE ))
-
-
-#finds the 2.5% quantile for each state 
-#QuantileStateData = fullData |> 
-#  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
-#  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
-#  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
-#  group_by(`DEED SITUS STATE - STATIC`) |>
-#  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
-
-#csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileStateData")
-#write.csv(QuantileStateData,csvtitle)
-
-#QuantileArmsStateData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
-#  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
-#  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
-#  group_by(`DEED SITUS STATE - STATIC`) |>
-#  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
-
-
-#csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsStateData")
-#write.csv(QuantileArmsStateData,csvtitle)
-
-#finds the 2.5% Quantile for each county 
-#QuantileCountyData = fullData |> 
-#  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
-#  select(`SALE DERIVED DATE`,
-#         `DEED SITUS COUNTY - STATIC` ,
-#         `DEED SITUS STATE - STATIC`) |> 
-  #mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
-  #group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
-  #summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
-
-
-#UNCOMMENT WHEN NECESSARY 
-#QuantileArmsCountyData=fullData |> 
-#  filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
-# select(`SALE DERIVED DATE`,
- #        `DEED SITUS COUNTY - STATIC` ,
- #        `DEED SITUS STATE - STATIC`) |> 
- # mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
- # filter(as.numeric(`SALE DERIVED YEAR`)>1970) |>
- # group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
- # summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
-#csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsCountyData")
-#write.csv(QuantileArmsCountyData,csvtitle)
-
-# finds the number of rows 
-#result <- dbGetQuery(con, "SELECT COUNT(*) AS row_count FROM deeds")
-# Extract the row count from the result
-#row_count <- result$row_count
-# Print the row count
-#print(row_count)
-
-# this code helped me realize mistakes present in the data 
-#filters data to show how many deeds each state has at least listed 
-#CountyData= fullData|>filter(`DEED SITUS STATE - STATIC`!="NA")|> filter(`DEED SITUS COUNTY - STATIC`=="SAN DIEGO" & `DEED SITUS STATE - STATIC` != "CA") #|> #filter(`DEED SITUS STATE - STATIC` != "CA" ) 
-#print(CountyData)
-
-# countydata 
-CountyData = fullData |> 
-  filter(`DEED SITUS STATE - STATIC` != "NA") |> 
-  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
-  summarize(n = n())
 
 # does it by fips rather than county since fips may be more accurate 
 CountyFipsData=fullData |> 
   filter(`DEED SITUS STATE - STATIC` != "NA"& `FIPS CODE`!="NA") |> 
   group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
   summarize(n = n())
-#print(CountyFipsData)
-
-# Here I realized that the county may be listed, but the state may not be but not the converse as I have seen with previous tests 
-#SANDDATA=fullData |>filter(`DEED SITUS STATE - STATIC`!="NA") |> filter(`DEED SITUS COUNTY - STATIC`=="SAN DIEGO") |> summarize(n = n())
-#print(SANDDATA)
 
 
 #creates tibble for each column and reports the missingness 
@@ -189,7 +87,8 @@ CountyFipsData=fullData |>
 #' @param column refers to the column in Corelogic 
 #' @param region refers to if you want the string "DEED SITUS COUNTY - STATIC" or "DEED SITUS STATE - STATIC"
 #' @param year   You must give a boolean for the parameter true means you want it on a time scale false is no 
-#'
+#' @param fips   You must give a boolean for the parameter true means you want it using FIPS rather than county
+#' 
 #' @return a table with county/state (and year) and the relevant column
 #' @export
 #'
@@ -404,84 +303,8 @@ return(data)
   
 }}}
 
-#### IMPORTANT THIS NEXT SECTION CREATES TABLE FOR THE DATA ASCRIBED FOR STATE AND COUNTY
-###Remember to add TRUE and FALSE to each tibbleCreator()
-
-#data=tibbleCreator("SALE AMOUNT","DEED SITUS COUNTY - STATIC")
-#print(data)
-
-#data=tibbleCreator("APN SEQUENCE NUMBER","DEED SITUS STATE - STATIC",TRUE)
-#print(data)
-
-#data=tibbleCreator("DEED SITUS CITY - STATIC","DEED SITUS COUNTY - STATIC")
-#data=data |> arrange(desc(`DEED SITUS STATE - STATIC`))
-#print(data)
-
-#data=tibbleCreator("DEED SITUS ZIP CODE - STATIC","DEED SITUS COUNTY - STATIC")
-#data=data |> arrange(desc(`DEED SITUS COUNTY - STATIC`))
-#print(data)
-
-#data=tibbleCreator("SALE DERIVED DATE","DEED SITUS COUNTY - STATIC")
-#print(data)
-
-#data=tibbleCreator("SALE DERIVED RECORDING DATE","DEED SITUS COUNTY - STATIC")
-#print(data)
-
-
-#data=tibbleCreator("LAND USE CODE - STATIC","DEED SITUS COUNTY - STATIC")
-#print(data)
-
-#data=tibbleCreator("ACTUAL YEAR BUILT - STATIC","DEED SITUS COUNTY - STATIC")
-#print(data)
-
-#data=tibbleCreator("PROPERTY INDICATOR CODE - STATIC","DEED SITUS COUNTY - STATIC")
-#print(data)
-
-#data=tibbleCreator("PROPERTY INDICATOR CODE - STATIC","DEED SITUS STATE - STATIC",FALSE)
-#print(data)
-
-# checks missingness of APN Sequence Number by state 
-#data=tibbleCreator("APN SEQUENCE NUMBER","DEED SITUS STATE - STATIC",TRUE)
-#print(data)
-
-
-# checks missingness of city by state 
-#data=tibbleCreator("DEED SITUS CITY - STATIC","DEED SITUS STATE - STATIC")
-#print(data)
-
-
-### IMPORTANT IF WE KNOW THE STATE OF THE DEED WE WILL ALWAYS KNOW THE COUNTY OF THE DEED BUT NOT THE CONVERSE
-# checks missingness of county by state 
-#tibbleCreator("DEED SITUS COUNTY - STATIC")
-#data=tibbleCreator("DEED SITUS COUNTY - STATIC")
-#print(data)
-
-
-# checks missingness of zipcode by state 
-#data=tibbleCreator( "DEED SITUS ZIP CODE - STATIC","DEED SITUS STATE - STATIC")
-#print(data)
-
-# checks missingness of Sale Amount by state 
-#data=tibbleCreator(  "SALE AMOUNT","DEED SITUS STATE - STATIC")
-#print(data)
-
-# checks missingness of Sale Derived Rate by state"
-#data=tibbleCreator("SALE DERIVED DATE","DEED SITUS STATE - STATIC")
-#print(data)
-
-# checks missingness of Sale Derived Date by state"
-#data=tibbleCreator( "SALE DERIVED RECORDING DATE","DEED SITUS STATE - STATIC")
-#print(data)
-
-# checks missingness of Land Use Code by state"
-#data=tibbleCreator("LAND USE CODE - STATIC","DEED SITUS STATE - STATIC")
-#print(data)
-
-# checks missingness of build year by state"
-#data=tibbleCreator("ACTUAL YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",TRUE)
-#print(data)
-
 #CREATES CSV's in Output Folder
+#Well now tibbleCreator needs a fourth parameter 
 
 #data=tibbleCreator("ACTUAL YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",FALSE)
 #data=tibbleCreator("BUYER OCCUPANCY CODE","DEED SITUS STATE - STATIC",FALSE)
@@ -498,39 +321,209 @@ return(data)
 #data=tibbleCreator("DEED SITUS ZIP CODE - STATIC","DEED SITUS STATE - STATIC",FALSE)
 #data=tibbleCreator("EFFECTIVE YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",FALSE)
 #data=tibbleCreator("FIPS CODE","DEED SITUS COUNTY - STATIC",FALSE)
+#disconnects in order to avoid garbage collecting 
+dbDisconnect(con)
+````
 
-#print(tibbleCreator("SALE AMOUNT","DEED COUNTY STATE - STATIC",TRUE,TRUE))
 
-### FOR ARMS LENGTH SALES 
+### Alongside some other visualization, this code made me realize that the Corelogic Dataset has not updated county names, as in 1997 Dade County became Miami Dade County, but this dataset still uses Dade County even after 1997.
 
-#CountyFipsTypeAData=fullData |> 
- #filter(`DEED SITUS STATE - STATIC` != "NA"& `FIPS CODE`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
-  #group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
-  #summarize(n = n())
+
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+Miami=fullData |> filter(`DEED SITUS CITY - STATIC`=="MIAMI") |> filter(as.numeric(`ACTUAL YEAR BUILT - STATIC`)>1997) |> select(`DEED SITUS COUNTY - STATIC`)
+print(Miami)
+
+dbDisconnect(con)
+
+````
+
+### This code snippet shows that there are errors in the reporting of States whether numerical or ones that simply just don't exist
+
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+#Takes out lowercase state abbreviations made me realize there are quite a bit of different non state abbreviations 
+#,yet there are still many typo caps 
+caps= fullData |> filter(str_detect(`DEED SITUS STATE - STATIC`,"[A-Z][A-Z]")||is.na(`DEED SITUS STATE - STATIC`)) |>        group_by(`DEED SITUS STATE - STATIC`) |> 
+  summarize(n = n()) 
+print(caps)
+
+dbDisconnect(con)
+````
+
+
+
+
+### Deals with FMV Sales (Talk with Angela about next steps)
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+
+#displays number of NON FMV data
+FMVData= fullData |> filter(`PRIMARY CATEGORY CODE`=="B"||`PRIMARY CATEGORY CODE`=="C"||`FORECLOSURE REO SALE INDICATOR`=="1"||`SALE TYPE CODE`=="L"||`INTERFAMILY RELATED INDICATOR`=="1"||`SHORT SALE INDICATOR`=="1")|> 
+  summarize(n=n())
+#print(FMVData)
+
+#Currently FMV DATA took a while to realize that the reason sale type code was causing issues was that it had NA Values 
+#
+FMVData = fullData |> 
+  filter(`PRIMARY CATEGORY CODE`!="B"&`PRIMARY CATEGORY CODE`!="C"&`FORECLOSURE REO SALE INDICATOR`!="1"& `INTERFAMILY RELATED INDICATOR`!="1" & `SHORT SALE INDICATOR`!="1") |>
+  filter(`SALE TYPE CODE`!="L"||is.na(`SALE TYPE CODE`))
+#print(FMVData)
+
+
+#THIS SECTION looks at each group to see the most common type of each and which codes exist 
+Primtype= fullData |> group_by(`PRIMARY CATEGORY CODE`) |> 
+summarize(n=n())
+#print(Primtype)
+
+Cattype= fullData |> group_by(`DEED CATEGORY TYPE CODE`) |> summarize(n=n())
+#print(Cattype)
+
+SaleType= fullData |> group_by(`SALE TYPE CODE`) |> summarize(n=n())
+#print(SaleType)
+
+Saledoc = fullData |> group_by(`SALE DOCUMENT TYPE  CODE`) |> summarize(n=n())
+#print(Saledoc)
+
+family= fullData |> group_by(`INTERFAMILY RELATED INDICATOR`) |> summarize(n=n())
+#print(family)
+
+short= fullData |> group_by(`SHORT SALE INDICATOR`) |> summarize(n=n())
+#print(short)
+
+foreclosure = fullData |> group_by(`FORECLOSURE REO SALE INDICATOR`) |> summarize(n=n())
+#print(foreclosure)
+
+dbDisconnect(con)
+````
+
+
+#### Quantile Data Info
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+##### THIS FINDS THE MEDIAN SALE DERIVED DATE YEAR FOR EACH STATE 
+QuartileData=fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS STATE - STATIC`) |> select(-`SALE DERIVED DATE`) |> summarize(Median = median(as.numeric(`SALE DERIVED YEAR`),na.rm = TRUE ))
+
+
+#finds the 2.5% quantile for each state 
+QuantileStateData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
+  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  group_by(`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+
+csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileStateData")
+#write.csv(QuantileStateData,csvtitle)
+
+QuantileArmsStateData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  group_by(`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+
+
+csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsStateData")
+#write.csv(QuantileArmsStateData,csvtitle)
+
+#finds the 2.5% Quantile for each county 
+QuantileCountyData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
+  select(`SALE DERIVED DATE`,
+         `DEED SITUS COUNTY - STATIC` ,
+         `DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+
+
+#UNCOMMENT WHEN NECESSARY 
+QuantileArmsCountyData=fullData |> 
+  filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+ select(`SALE DERIVED DATE`,
+         `DEED SITUS COUNTY - STATIC` ,
+         `DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+ filter(as.numeric(`SALE DERIVED YEAR`)>1970) |>
+  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsCountyData")
+#write.csv(QuantileArmsCountyData,csvtitle)
+
+dbDisconnect(con)
+````
+
+### Just to illustrate some errors in the Deeds Data we can see how mistaken the data is in San Diego 
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+# this code helped me realize mistakes present in the data 
+#filters data to show how many deeds each state has at least listed 
+CountyData= fullData|>filter(`DEED SITUS STATE - STATIC`!="NA")|> filter(`DEED SITUS COUNTY - STATIC`=="SAN DIEGO" & `DEED SITUS STATE - STATIC` != "CA") |> select(`DEED SITUS CITY - STATIC`,`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`,`FIPS CODE`)
+print(CountyData)
+
+dbDisconnect(con)
+````
+
+
+### Takes a closer look at Arms Length Sales
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+
+CountyFipsTypeAData=fullData |> 
+ filter(`DEED SITUS STATE - STATIC` != "NA"& `FIPS CODE`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+  group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  summarize(n = n())
 #print(CountyFipsTypeAData)
 
-#data = fullData |>
- # filter(`FIPS CODE`!="NA"&`PRIMARY CATEGORY CODE`=="A"&`SALE AMOUNT`!="NA") |>
- #filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
- #group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
- # summarize("Sale Amount Present" := n()) 
+data = fullData |>
+  filter(`FIPS CODE`!="NA"&`PRIMARY CATEGORY CODE`=="A"&`SALE AMOUNT`!="NA") |>
+ filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
+ group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  summarize("Sale Amount Present" := n()) 
 
       
 
-#data = data|> 
-  #left_join(CountyFipsTypeAData, data, by=c("DEED SITUS STATE - STATIC","FIPS CODE")) 
+data = data|> 
+  left_join(CountyFipsTypeAData, data, by=c("DEED SITUS STATE - STATIC","FIPS CODE")) 
 
 
-#data = data |>
- # rename("Total Deeds" = `n`)
+data = data |>
+  rename("Total Deeds" = `n`)
 
 
-#data = data |>
-#  mutate("% missing"= round((100* (1-(`Sale Amount Present`)/(`Total Deeds`))), digits=2)) 
+data = data |>
+  mutate("% missing"= round((100* (1-(`Sale Amount Present`)/(`Total Deeds`))), digits=2)) 
 
 #Now gives the missingness 
-#data = data |>
-# arrange(desc(`DEED SITUS STATE - STATIC`))
+data = data |>
+ arrange(desc(`DEED SITUS STATE - STATIC`))
 
 #print(data)
 
@@ -538,84 +531,57 @@ return(data)
 #csvtitle=paste0("/home/jc9154/cl-validation/Output/","SaleAmountTypeA",".csv")
 #write.csv(data,csvtitle)
 
-#missingFips=fullData |> filter(is.na(`FIPS CODE`)) |> mutate("CITY PRESENT"=is.na(`DEED SITUS CITY - STATIC`), .before = CLIP) |> mutate("ZIPCODE PRESENT"=is.na(`DEED SITUS ZIP CODE - STATIC`), .before = CLIP) |> mutate("County Present"=is.na(`DEED SITUS COUNTY - STATIC`), .before = CLIP) |> mutate("State Present"= is.na(`DEED SITUS STATE - STATIC`), .before = CLIP) |> mutate("Street Present"=is.na(`DEED SITUS STREET NAME - STATIC`), .before = CLIP) |> filter(`Street Present`==TRUE & `CITY PRESENT`==TRUE & `ZIPCODE PRESENT` == TRUE) 
+dbDisconnect(con)
+````
+
+
+### Looks at when the Fips is missing and its effect on the missingness of the Street, Zipcode, and City
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+
+missingFips=fullData |> filter(is.na(`FIPS CODE`)) |> mutate("CITY PRESENT"=is.na(`DEED SITUS CITY - STATIC`), .before = CLIP) |> mutate("ZIPCODE PRESENT"=is.na(`DEED SITUS ZIP CODE - STATIC`), .before = CLIP) |> mutate("County Present"=is.na(`DEED SITUS COUNTY - STATIC`), .before = CLIP) |> mutate("State Present"= is.na(`DEED SITUS STATE - STATIC`), .before = CLIP) |> mutate("Street Present"=is.na(`DEED SITUS STREET NAME - STATIC`), .before = CLIP) |> filter(`Street Present`==TRUE & `CITY PRESENT`==TRUE & `ZIPCODE PRESENT` == TRUE) 
 
 
 #I got the two tables in the doc by simply adding or removing ! from Street NOT Present 
-#missingFipsProp=fullData |> filter(is.na(`FIPS CODE`)) |> mutate("CITY NOT PRESENT"=is.na(`DEED SITUS CITY - STATIC`), .before = CLIP) |> mutate("ZIPCODE NOT PRESENT"=is.na(`DEED SITUS ZIP CODE - STATIC`), .before = CLIP) |> mutate("Street NOT Present"=is.na(`DEED SITUS STREET NAME - STATIC`), .before = CLIP) |> filter(!(`Street NOT Present`)) |> group_by(`Street NOT Present`,`CITY NOT PRESENT`,`ZIPCODE NOT PRESENT`) |> summarise(n=(n()), .groups = "drop") |> mutate(prop=round((n/sum(n)),digits = 3))
+missingFipsProp=fullData |> filter(is.na(`FIPS CODE`)) |> mutate("CITY NOT PRESENT"=is.na(`DEED SITUS CITY - STATIC`), .before = CLIP) |> mutate("ZIPCODE NOT PRESENT"=is.na(`DEED SITUS ZIP CODE - STATIC`), .before = CLIP) |> mutate("Street NOT Present"=is.na(`DEED SITUS STREET NAME - STATIC`), .before = CLIP) |> filter(!(`Street NOT Present`)) |> group_by(`Street NOT Present`,`CITY NOT PRESENT`,`ZIPCODE NOT PRESENT`) |> summarise(n=(n()), .groups = "drop") |> mutate(prop=round((n/sum(n)),digits = 3))
 
-#missingFips = missingFips |> filter(is.na(`APN SEQUENCE NUMBER`)==FALSE) |> summarise(n=n())
-
-
-#compData=fullData|> filter(is.na(`FIPS`)==FALSE) |> summarise(n=n())
-#fullData=fullData|> summarise(n=n())
-#print(compData)
-#print(fullData)
-
-#print(missingFipsProp)
-
-# THOUGHT PROCESS 
-#LolliFipsCounty= fullData |> filter(is.na(`FIPS CODE`)) |> summarise(n=n())
-#Lolli!FipsCounty= fullData |> filter(is.na(`FIPS CODE`)) |> summarise(n=n())
-#LolliFipsCountyLOL=fullData |> filter(is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS CITY - STATIC`))) |> summarise(n=n())
-#FIPSMissing=LolliFipsCounty |> pull(n)
-#FIPSpres=Lolli!FipsCounty|> pull(n)
-#CityComplete=LolliFipsCountyLOL |> pull(n)
-#percentage=round((CityComplete/FIPSMissing),digits = 3)
-#percentageAv=round((CityComplete/FIPSMissing),digits = 3)
+missingFips = missingFips |> filter(is.na(`APN SEQUENCE NUMBER`)==FALSE) |> summarise(n=n())
 
 
-#MissingFips=fullData |> filter(is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
-#PresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
-#CityPresentNonFips= fullData |> filter(is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS CITY - STATIC`))) |> summarise(n=n())|> pull(n)
-#CityPresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS CITY - STATIC`))) |> summarise(n=n())|> pull(n)
+dbDisconnect(con)
+````
 
-#CityNonFips=CityPresentNonFips/MissingFips
-#CityFips=CityPresentFips/PresentFips
+### Detailing the lackluster info for Native Reservations around 3000 people but only 2 deeds and the county and fips are off for one of them
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
 
-#MissingFips=fullData |> filter(is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
-#PresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
-#StreetPresentNonFips= fullData |> filter(is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS STREET NAME - STATIC`))) |> summarise(n=n())|> pull(n)
-#StreetPresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS STREET NAME - STATIC`))) |> summarise(n=n())|> pull(n)
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
 
-#StreetNonFips=StreetPresentNonFips/MissingFips
-#StreetFips=StreetPresentFips/PresentFips
+kodzebue=fullData |> filter(`DEED SITUS CITY - STATIC`=="KOTZEBUE") |> select(`FIPS CODE`,`DEED SITUS CITY - STATIC`,`DEED SITUS COUNTY - STATIC`)
+print(kodzebue)
 
 
+dbDisconnect(con)
 
-#MissingFips=fullData |> filter(is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
-#PresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> summarise(n=n()) |> pull(n)
-#ZipCodePresentNonFips= fullData |> filter(is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS ZIP CODE - STATIC`))) |> summarise(n=n())|> pull(n)
-#ZipCodePresentFips=fullData |> filter(!is.na(`FIPS CODE`)) |> filter(!(is.na(`DEED SITUS ZIP CODE - STATIC`))) |> summarise(n=n())|> pull(n)
+````
 
-#ZipCodeNonFips=ZipCodePresentNonFips/MissingFips
-#ZipCodeFips=ZipCodePresentFips/PresentFips
+## LollipopCreator() 
 
+#### This function creates a Lollipop graph so for the parameter column you give a column in the database which is the parameter column and then give the column number for which you want to start at and end is the column you want to end at. So the LollipopCreator() makes a lollipop graph comparing the missigness for the specific columns you chose given when the column paramter you gave is present and not present.
+````{R}
+library(ggplot2)
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
 
-#NonFips=c(CityNonFips,StreetNonFips,ZipCodeNonFips)
-#Fips=c(CityFips,StreetFips,ZipCodeFips)
-#LolliData=data.frame(NonFips=NonFips,
- #                     Fips=Fips)
-#row.names(LolliData)=c("City","Street","ZipCode")
-#print(LolliData)
-
-#summarize(prop=) add columns to fulldata easuer than function
-
-#ggplot(LolliData) + geom_segment( aes(x=c("City","Street","ZipCode"), xend=c("City","Street","ZipCode"), y=NonFips, yend=Fips), color="grey") +
- # geom_point( aes(x=c("City","Street","ZipCode"), y=NonFips), color=rgb(0.2,0.7,0.1,0.5), size=3 ) +
- # geom_point( aes(x=c("City","Street","ZipCode"), y=Fips), color=rgb(0.7,0.2,0.1,0.5), size=3 ) +
- # coord_flip()+
- # theme(
- #   legend.position = "none",
- # ) +
- # xlab("Columns") +
-  #ylab("% Complete")+ylim(0,1)
-
-#ColumnNameList=colnames(fullData)
-#missing=numeric(length(ColumnNameList))
-#nonmissing=numeric(length(ColumnNameList))
-
-
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
 
 LollipopCreator= function(column,start,end){
 ColumnNameList = colnames(fullData)[start:end]
@@ -660,20 +626,11 @@ row.names(LollipopData)=ColumnNameList
       plot.subtitle = element_text(hjust = 0.5)  # Center the subtitle
     )}
 
-LollipopCreator("SALE AMOUNT",10,25)
+LollipopCreator("SALE AMOUNT",16,23)
 
-
-
-#print(ZipCodeNonFips)
-#print(ZipCodeFips)
-
-#print(LolliFipsCounty)
-#print(LolliFips)
-
-
-#kodzebue=fullData |> filter(`DEED SITUS CITY - STATIC`=="KOTZEBUE")
-#print(kodzebue)
 
 #disconnects in order to avoid garbage collecting 
 dbDisconnect(con)
 ````
+
+
