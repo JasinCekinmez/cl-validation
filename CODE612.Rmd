@@ -574,7 +574,7 @@ dbDisconnect(con)
 
 ## LollipopCreator() 
 
-#### This function creates a Lollipop graph so for the parameter column you give a column in the database which is the parameter column and then give the column number for which you want to start at and end is the column you want to end at. So the LollipopCreator() makes a lollipop graph comparing the missigness for the specific columns you chose given when the column paramter you gave is present and not present.
+#### This function creates a Lollipop graph so for the parameter column you give a column in the database which is the parameter column and then give the column number for which you want to start at and end is the column you want to end at. So the LollipopCreator() makes a lollipop graph comparing the missigness for the specific columns you chose given when the column paramter you gave is present and not present.I also added list parameter so you can add a list with specific values rather than having to choose a specific value. Also the type parameter adds a filter to the specific column parameter in order to have more specific lollipop graphs. More parameters added to give more specific lollipop graphs. 
 ````{R}
 library(ggplot2)
 con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
@@ -583,18 +583,58 @@ fullData = tbl(con, "deeds")
 fullData = fullData |> 
   filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
 
-LollipopCreator= function(column,start,end){
+#' Title
+#'
+#' @param column string given x gives % complete 
+#' @param start numeric where in fullData you want to begin put "" if you want to use list instead
+#' @param end numeric where in fullData you want to end  put "" if you want to use list instead
+#' @param list type list put in a list with the exact column names from full Data "" if you want to use top 2 instead
+#' @param type string if you want to filter column put "" if you don't want to filter 
+#' @param filter string if you want to filter a column in start-end or list put "" if you don't want to filter 
+#' @param na    boolean set TRUE if you want to include NA's else FALSE to exclude NA's 
+#'
+#' @return lollipop graph
+#' @export
+#'
+#' @examples LollipopCreator("PRIMARY CATEGORY CODE",90,103,"","A","",TRUE) given ARMS sales or not what % is complete also includes NA's however PRIMARY CATEGORY CODE has no NA's so it doesn't really matter 
+LollipopCreator= function(column,start,end,list,type,filter,na){
+if(start!=""){
 ColumnNameList = colnames(fullData)[start:end]
-  missing = numeric(length(ColumnNameList))
-  nonmissing = numeric(length(ColumnNameList))  
+}
+else{
+ColumnNameList = list 
+  
+}
 
+missing = numeric(length(ColumnNameList))
+  nonmissing = numeric(length(ColumnNameList))  
 column = as.name(column)
+  
+if (type==""){
 MissingColumn=fullData |> filter(is.na(column)) 
 PresentColumn=fullData |> filter(!is.na(column))
 MissingColumnValue=fullData |> filter(is.na(column)) |> summarise(n=n()) |> pull(n)
 PresentColumnValue=fullData |> filter(!is.na(column)) |> summarise(n=n()) |> pull(n)
-for(i in 1:length(ColumnNameList)){
+}
   
+else{
+if(!na){
+MissingColumn=fullData |> filter(column!=type) 
+PresentColumn=fullData |> filter(column==type)
+MissingColumnValue=fullData |> filter(column!=type) |> summarise(n=n()) |> pull(n)
+PresentColumnValue=fullData |> filter(column==type) |> summarise(n=n()) |> pull(n)  
+
+}
+else{
+MissingColumn=fullData |> filter(column!=type||is.na(column)) 
+PresentColumn=fullData |> filter(column==type)
+MissingColumnValue=fullData |> filter(column!=type||is.na(column)) |> summarise(n=n()) |> pull(n)
+PresentColumnValue=fullData |> filter(column==type) |> summarise(n=n()) |> pull(n)  
+}}  
+  
+  
+for(i in 1:length(ColumnNameList)){
+if(filter==""||i!=1) {
 ValuePresentNonColumn= MissingColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> summarise(n=n())|> pull(n)
 ValuePresentColumn=PresentColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> summarise(n=n())|> pull(n)
 
@@ -602,8 +642,22 @@ ValueNonColumn=ValuePresentNonColumn/MissingColumnValue
 ValueColumn=ValuePresentColumn/PresentColumnValue  
 
 missing[i]=ValueNonColumn
-nonmissing[i]=ValueColumn
+nonmissing[i]=ValueColumn}
+
+else {
+  filter_col == sym(ColumnNameList[i])
+  ValuePresentNonColumn == MissingColumn %>% filter(!!filter_col != filter) %>% summarise(n=n()) %>% pull(n)
+  ValuePresentColumn == PresentColumn %>% filter(!!filter_col == filter) %>% summarise(n=n()) %>% pull(n)
+
+  ValueNonColumn == ValuePresentNonColumn / MissingColumnValue
+  ValueColumn == ValuePresentColumn / PresentColumnValue  
+
+  missing[i] == ValueNonColumn
+  nonmissing[i] == ValueColumn  
 }
+}
+
+
 LollipopData=data.frame(MissingSomething=missing, PresentColumn=nonmissing)
 row.names(LollipopData)=ColumnNameList
 
@@ -615,8 +669,8 @@ row.names(LollipopData)=ColumnNameList
     labs(
       x = "Columns",
       y = "% Complete",
-      title = paste("% Complete given ", column, "vs. Complete no ", column),
-      subtitle = "Missing vs. Present values across columns", caption = paste("RED=Missing ",column, "GREEN=Present ",column) 
+      title = paste("% Complete given ", column,type, "vs. no ", column,type),
+      subtitle = "No/Missing vs. Present values across columns", caption = paste("RED=No/Missing ",column,type, "GREEN=Present ",column,type, if(na){ "includes NA's"} else{ "excludes NA's"}) 
     ) +
     ylim(0, 1) +
     theme_minimal() +
@@ -626,11 +680,30 @@ row.names(LollipopData)=ColumnNameList
       plot.subtitle = element_text(hjust = 0.5)  # Center the subtitle
     )}
 
-LollipopCreator("SALE AMOUNT",16,23)
-
-
+#LollipopCreator("SALE AMOUNT",16,23,"","")
+TryList=c("SALE AMOUNT","DEED SITUS ZIP CODE - STATIC","DEED SITUS CITY - STATIC")
+LollipopCreator("PRIMARY CATEGORY CODE",1,15,"","A","",TRUE)
+LollipopCreator("PRIMARY CATEGORY CODE",15,30,"","A","",TRUE)
+LollipopCreator("PRIMARY CATEGORY CODE",30,45,"","A","",TRUE)
+LollipopCreator("PRIMARY CATEGORY CODE",45,60,"","A","",TRUE)
+LollipopCreator("PRIMARY CATEGORY CODE",60,75,"","A","",TRUE)
+LollipopCreator("PRIMARY CATEGORY CODE",75,90,"","A","",TRUE)
+LollipopCreator("PRIMARY CATEGORY CODE",90,103,"","A","",TRUE)
 #disconnects in order to avoid garbage collecting 
 dbDisconnect(con)
 ````
+### SCRATCH 
+````{R}
+
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+pr = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb) #|> group_by(`PRIMARY CATEGORY CODE`) |> summarize(n=n())
+
+print(pr)
 
 
+
+dbDisconnect(con)
+````
