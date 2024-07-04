@@ -1,0 +1,1130 @@
+---
+title: "REMATCH+ Project"
+author: "Jasin Cekinmez"
+date: "2024-06-27"
+output: html_document 
+---
+
+### Installs Libraries 
+
+````{R}
+#installs libraries
+library(DBI)
+library(dbplyr)
+library(dplyr)
+library(duckdb)
+library(duckplyr)
+library(tidyr)
+library(tidyselect)
+library(tibble)
+library(RSQLite)
+library(stringr)
+library(rlang)
+library(styler) 
+library(sf)
+
+````
+
+
+
+## TibbleCreator() and its setup
+
+#### The goal of TibbleCreator() is to create a table and csv that checks the missingness for the column provided in fullData hence the parameter column. It also can do it on a state or county basis with the region parameter. The year parameter asks whether you want on a yearly basis or overall. FIPS parameter asks whether you want it on FIPS or county. For Column you must provide one of the 103 columns in fullData that matches exactly, for the Region Parameter, you must either put `DEED SITUS STATE - STATIC` for state or `DEED SITUS COUNTY - STATIC` for county, for the YEAR parameter you must input TRUE if you want it on a yearly basis and false if not, likewise for FIPS you need to put in TRUE if you want to do it by FIPS rather than county and False if not. fullDaa, StateYearData, CountyYearData, etc are necessities for TibbleCreator() to work since they are called in it. ALSO** FIPS only works on County since it is on a county basis, the function will still work but have no difference if FIPS was set to False.
+
+````{R}
+#Creates a database connection to cl.db which is the unzipped db file with deeds as the table and is a db file
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+#Adds DC to state.abb and the goal of this is to not included territories
+statenewabb = c("DC", state.abb)
+
+#Takes the database connection and turns it into a tibble and filters out non states and DC and ones that do not exist
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+
+#Filters data to show how many deeds each state has at least listed 
+StateData = fullData |> 
+  group_by(`DEED SITUS STATE - STATIC`) |>
+  summarize(n = n())
+
+#Filters data to show how many deeds each county has at least listed  
+CountyData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA") |> 
+  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+  summarize(n = n())
+
+
+#Creates Table filtering deed data for each state and year 
+StateYearData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
+  group_by(substr(`SALE DERIVED DATE`,1,4),`DEED SITUS STATE - STATIC`) |>
+  summarize(n=n())
+
+
+
+#Creates Table filtering deed data for each county and year 
+CountyYearData = fullData |>
+  filter(`DEED SITUS STATE - STATIC` != "NA" ) |> 
+  group_by(substr(`SALE DERIVED DATE`,1,4),
+           `DEED SITUS COUNTY - STATIC`,
+           `DEED SITUS STATE - STATIC`) |> 
+  summarize(n=n())
+
+
+
+# does it by fips rather than county since fips may be more accurate 
+CountyFipsData=fullData |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA"& `FIPS CODE`!="NA") |> 
+  group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  summarize(n = n())
+
+
+#creates tibble for each column and reports the missingness 
+#' tibbleCreator() Function
+#'
+#' @param column refers to the column in Corelogic 
+#' @param region refers to if you want the string "DEED SITUS COUNTY - STATIC" or "DEED SITUS STATE - STATIC"
+#' @param year   You must give a boolean for the parameter true means you want it on a time scale false is no 
+#' @param fips   You must give a boolean for the parameter true means you want it using FIPS rather than county
+#' 
+#' @return a table with county/state (and year) and the relevant column
+#' @export
+#'
+#' @examples tibbleCreator("SALE AMOUNT","DEED SITUS STATE - STATIC",TRUE) Creates a table with the Sale Amount, with year data per state 
+tibbleCreator= function(column, region, year, fips) {
+
+#turns column into variable rather than string
+column = as.name(column)
+
+#Checks if we want to filter by state data
+if(region == "DEED SITUS STATE - STATIC"){
+
+#Filters solely by state not year 
+  if(!year){
+
+#creates the column name 
+colu = paste0(toString(column)," PRESENT")
+
+#filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
+region = as.name(region)
+
+#Filters data to only count data that has the relevant column filled checks if you want fips code 
+
+data = fullData |> 
+          group_by(region) |>
+          filter(column !="NA") |> 
+         summarize(!!colu := n())
+#the above table is now being appended to the right by the total # of deeds per state 
+
+region = toString(region)
+
+#Combines tables 
+data = left_join(data, StateData, by=region)
+
+#Changes column names 
+data = data |> 
+  rename("Total Deeds" = `n`)
+
+
+#Now gives the missingness 
+data = data |> 
+  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+
+#Arranges in descending order 
+data = data |> 
+  arrange(desc(`DEED SITUS STATE - STATIC`))
+
+
+#CREATES CSV File
+column = toString(column)
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,".csv")
+write.csv(data,csvtitle)
+return(data)}
+
+#Filters by state and year 
+  else{
+
+colu = paste0(toString(column)," PRESENT")
+
+#filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
+region = as.name(region)
+
+data = fullData |> 
+  filter(column!="NA") |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA") |> 
+  group_by(substr(`SALE DERIVED DATE`, 1, 4),`DEED SITUS STATE - STATIC`) |> 
+  summarize(!!colu := n())
+
+region = toString(region)
+
+data = left_join(data, StateYearData, by=c("substr(`SALE DERIVED DATE`, 1, 4)","DEED SITUS STATE - STATIC"))
+
+data = data |> 
+  rename("Total Deeds" = `n`)
+
+data = data |> 
+  rename(`SALE DERIVED YEAR` = `substr(\`SALE DERIVED DATE\`, 1, 4)`)
+
+data = data |> 
+  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+
+#Now gives the missingness 
+data = data |> 
+  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`SALE DERIVED YEAR`))
+
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,"YEAR.csv")
+write.csv(data,csvtitle)
+
+
+return(data) }}
+
+#Filters by county data 
+else{
+
+  if(!year){
+
+region = as.name(region)
+
+colu = paste0(toString(column)," PRESENT")
+
+if(!fips){
+data = fullData |>
+  filter(column != "NA") |>
+  filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
+  group_by(region,`DEED SITUS STATE - STATIC`)  |>
+  summarize(!!colu := n()) 
+
+region = toString(region)       
+
+data = data|> 
+  left_join(CountyData, data, by=c(region,"DEED SITUS STATE - STATIC")) 
+
+
+data = data |>
+  rename("Total Deeds" = `n`)
+
+
+data = data |>
+  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+
+#Now gives the missingness 
+data = data |>
+  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`DEED SITUS COUNTY - STATIC`))
+
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,".csv")
+write.csv(data,csvtitle)
+
+
+return(data)
+}
+else {
+data = fullData |>
+  filter(column != "NA"& `FIPS CODE`!="NA") |>
+  filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
+  group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  summarize(!!colu := n()) 
+
+      
+
+data = data|> 
+  left_join(CountyFipsData, data, by=c("DEED SITUS STATE - STATIC","FIPS CODE")) 
+
+
+data = data |>
+  rename("Total Deeds" = `n`)
+
+
+data = data |>
+  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+
+#Now gives the missingness 
+data = data |>
+  arrange(desc(`DEED SITUS STATE - STATIC`))
+
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,".csv")
+write.csv(data,csvtitle)
+
+
+return(data)
+}}
+
+#Filters by county and year   
+  else{
+
+colu = paste0(toString(column)," PRESENT")
+#filters entire data by state and disregards NA values and gives the total number of deeds per state satisfying the condition
+
+region = as.name(region)
+
+data = fullData |> 
+  filter(column!="NA") |> 
+  filter(`DEED SITUS STATE - STATIC` != "NA") |> 
+  group_by(substr(`SALE DERIVED DATE`, 1, 4),
+           `DEED SITUS COUNTY - STATIC`,
+           `DEED SITUS STATE - STATIC`) |>
+  summarize(!!colu := n())
+
+
+region = toString(region) 
+
+data = left_join(data,CountyYearData, by=c("substr(`SALE DERIVED DATE`, 1, 4)","DEED SITUS COUNTY - STATIC","DEED SITUS STATE - STATIC"))  
+
+data = data |> 
+  rename("Total Deeds" = `n`)
+
+data = data |> 
+  rename(`SALE DERIVED YEAR` = `substr(\`SALE DERIVED DATE\`, 1, 4)`)
+
+data = data |> 
+  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+
+
+data = data |>  
+  arrange(desc(`DEED SITUS STATE - STATIC`),
+          desc(`DEED SITUS COUNTY - STATIC`) ,
+          desc(`SALE DERIVED YEAR`))
+
+#CREATES CSV File
+column=toString(column)
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,"YEAR.csv")
+write.csv(data,csvtitle)
+
+
+return(data)
+
+  
+}}}
+
+#CREATES CSV's in Output Folder
+#Well now tibbleCreator needs a fourth parameter 
+
+#data=tibbleCreator("ACTUAL YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("BUYER OCCUPANCY CODE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("CLIP","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("DEED CATEGORY TYPE CODE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("SALE DOCUMENT TYPE  CODE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("FIPS CODE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("PRIMARY CATEGORY CODE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("PROPERTY INDICATOR CODE - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("SALE AMOUNT","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("SALE DERIVED DATE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("SALE DERIVED RECORDING DATE","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("DEED SITUS CITY - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("DEED SITUS ZIP CODE - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("EFFECTIVE YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",FALSE)
+#data=tibbleCreator("FIPS CODE","DEED SITUS COUNTY - STATIC",FALSE)
+#disconnects in order to avoid garbage collecting 
+dbDisconnect(con)
+````
+
+
+### Alongside some other visualization, this code made me realize that the Corelogic Dataset has not updated county names, as in 1997 Dade County became Miami Dade County, but this dataset still uses Dade County even after 1997.
+
+
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+Miami=fullData |> filter(`DEED SITUS CITY - STATIC`=="MIAMI") |> filter(as.numeric(`ACTUAL YEAR BUILT - STATIC`)>1997) |> select(`DEED SITUS COUNTY - STATIC`)
+print(Miami)
+
+dbDisconnect(con)
+
+````
+
+### This code snippet shows that there are errors in the reporting of States whether numerical or ones that simply just don't exist
+
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+#Takes out lowercase state abbreviations made me realize there are quite a bit of different non state abbreviations 
+#,yet there are still many typo caps 
+caps= fullData |> filter(str_detect(`DEED SITUS STATE - STATIC`,"[A-Z][A-Z]")||is.na(`DEED SITUS STATE - STATIC`)) |>        group_by(`DEED SITUS STATE - STATIC`) |> 
+  summarize(n = n()) 
+print(caps)
+
+dbDisconnect(con)
+````
+
+
+
+
+### Deals with FMV Sales (Talk with Angela about next steps)
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+
+#displays number of NON FMV data
+FMVData= fullData |> filter(`PRIMARY CATEGORY CODE`=="B"||`PRIMARY CATEGORY CODE`=="C"||`FORECLOSURE REO SALE INDICATOR`=="1"||`SALE TYPE CODE`=="L"||`INTERFAMILY RELATED INDICATOR`=="1"||`SHORT SALE INDICATOR`=="1")|> 
+  summarize(n=n())
+#print(FMVData)
+
+#Currently FMV DATA took a while to realize that the reason sale type code was causing issues was that it had NA Values 
+#
+FMVData = fullData |> 
+  filter(`PRIMARY CATEGORY CODE`!="B"&`PRIMARY CATEGORY CODE`!="C"&`FORECLOSURE REO SALE INDICATOR`!="1"& `INTERFAMILY RELATED INDICATOR`!="1" & `SHORT SALE INDICATOR`!="1") |>
+  filter(`SALE TYPE CODE`!="L"||is.na(`SALE TYPE CODE`))
+#print(FMVData)
+
+
+#THIS SECTION looks at each group to see the most common type of each and which codes exist 
+Primtype= fullData |> group_by(`PRIMARY CATEGORY CODE`) |> 
+summarize(n=n())
+#print(Primtype)
+
+Cattype= fullData |> group_by(`DEED CATEGORY TYPE CODE`) |> summarize(n=n())
+#print(Cattype)
+
+SaleType= fullData |> group_by(`SALE TYPE CODE`) |> summarize(n=n())
+#print(SaleType)
+
+Saledoc = fullData |> group_by(`SALE DOCUMENT TYPE  CODE`) |> summarize(n=n())
+#print(Saledoc)
+
+family= fullData |> group_by(`INTERFAMILY RELATED INDICATOR`) |> summarize(n=n())
+#print(family)
+
+short= fullData |> group_by(`SHORT SALE INDICATOR`) |> summarize(n=n())
+#print(short)
+
+foreclosure = fullData |> group_by(`FORECLOSURE REO SALE INDICATOR`) |> summarize(n=n())
+#print(foreclosure)
+
+dbDisconnect(con)
+````
+
+
+#### Quantile Data Info
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+##### THIS FINDS THE MEDIAN SALE DERIVED DATE YEAR FOR EACH STATE 
+QuartileData=fullData |> filter(`DEED SITUS STATE - STATIC`!="NA") |> select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |> group_by(`DEED SITUS STATE - STATIC`) |> select(-`SALE DERIVED DATE`) |> summarize(Median = median(as.numeric(`SALE DERIVED YEAR`),na.rm = TRUE ))
+
+
+#finds the 2.5% quantile for each state 
+QuantileStateData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
+  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  group_by(`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+
+csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileStateData")
+#write.csv(QuantileStateData,csvtitle)
+
+QuantileArmsStateData= fullData |> filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+  select(`SALE DERIVED DATE`,`DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  group_by(`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+
+
+csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsStateData")
+#write.csv(QuantileArmsStateData,csvtitle)
+
+#finds the 2.5% Quantile for each county 
+QuantileCountyData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC`!="NA") |> 
+  select(`SALE DERIVED DATE`,
+         `DEED SITUS COUNTY - STATIC` ,
+         `DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+
+
+#UNCOMMENT WHEN NECESSARY 
+QuantileArmsCountyData=fullData |> 
+  filter(`DEED SITUS STATE - STATIC`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+ select(`SALE DERIVED DATE`,
+         `DEED SITUS COUNTY - STATIC` ,
+         `DEED SITUS STATE - STATIC`) |> 
+  mutate("SALE DERIVED YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>
+ filter(as.numeric(`SALE DERIVED YEAR`)>1970) |>
+  group_by(`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`) |>
+  summarize(quantile2.5Year = quantile(as.numeric(`SALE DERIVED YEAR`), na.rm = T, probs = c(.025)))
+csvtitle=paste0("/home/jc9154/cl-validation/Output/","QuantileArmsCountyData")
+#write.csv(QuantileArmsCountyData,csvtitle)
+
+dbDisconnect(con)
+````
+
+### Just to illustrate some errors in the Deeds Data we can see how mistaken the data is in San Diego 
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+# this code helped me realize mistakes present in the data 
+#filters data to show how many deeds each state has at least listed 
+CountyData= fullData|>filter(`DEED SITUS STATE - STATIC`!="NA")|> filter(`DEED SITUS COUNTY - STATIC`=="SAN DIEGO" & `DEED SITUS STATE - STATIC` != "CA") |> select(`DEED SITUS CITY - STATIC`,`DEED SITUS COUNTY - STATIC`,`DEED SITUS STATE - STATIC`,`FIPS CODE`)
+print(CountyData)
+
+dbDisconnect(con)
+````
+
+
+### Takes a closer look at Arms Length Sales
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+
+CountyFipsTypeAData=fullData |> 
+ filter(`DEED SITUS STATE - STATIC` != "NA"& `FIPS CODE`!="NA"&`PRIMARY CATEGORY CODE`=="A") |> 
+  group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  summarize(n = n())
+#print(CountyFipsTypeAData)
+
+data = fullData |>
+  filter(`FIPS CODE`!="NA"&`PRIMARY CATEGORY CODE`=="A"&`SALE AMOUNT`!="NA") |>
+ filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
+ group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  summarize("Sale Amount Present" := n()) 
+
+      
+
+data = data|> 
+  left_join(CountyFipsTypeAData, data, by=c("DEED SITUS STATE - STATIC","FIPS CODE")) 
+
+
+data = data |>
+  rename("Total Deeds" = `n`)
+
+
+data = data |>
+  mutate("% missing"= round((100* (1-(`Sale Amount Present`)/(`Total Deeds`))), digits=2)) 
+
+#Now gives the missingness 
+data = data |>
+ arrange(desc(`DEED SITUS STATE - STATIC`))
+
+#print(data)
+
+#CREATES CSV File
+#csvtitle=paste0("/home/jc9154/cl-validation/Output/","SaleAmountTypeA",".csv")
+#write.csv(data,csvtitle)
+
+dbDisconnect(con)
+````
+
+
+### Looks at when the Fips is missing and its effect on the missingness of the Street, Zipcode, and City
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+
+missingFips=fullData |> filter(is.na(`FIPS CODE`)) |> mutate("CITY PRESENT"=is.na(`DEED SITUS CITY - STATIC`), .before = CLIP) |> mutate("ZIPCODE PRESENT"=is.na(`DEED SITUS ZIP CODE - STATIC`), .before = CLIP) |> mutate("County Present"=is.na(`DEED SITUS COUNTY - STATIC`), .before = CLIP) |> mutate("State Present"= is.na(`DEED SITUS STATE - STATIC`), .before = CLIP) |> mutate("Street Present"=is.na(`DEED SITUS STREET NAME - STATIC`), .before = CLIP) |> filter(`Street Present`==TRUE & `CITY PRESENT`==TRUE & `ZIPCODE PRESENT` == TRUE) 
+
+
+#I got the two tables in the doc by simply adding or removing ! from Street NOT Present 
+missingFipsProp=fullData |> filter(is.na(`FIPS CODE`)) |> mutate("CITY NOT PRESENT"=is.na(`DEED SITUS CITY - STATIC`), .before = CLIP) |> mutate("ZIPCODE NOT PRESENT"=is.na(`DEED SITUS ZIP CODE - STATIC`), .before = CLIP) |> mutate("Street NOT Present"=is.na(`DEED SITUS STREET NAME - STATIC`), .before = CLIP) |> filter(!(`Street NOT Present`)) |> group_by(`Street NOT Present`,`CITY NOT PRESENT`,`ZIPCODE NOT PRESENT`) |> summarise(n=(n()), .groups = "drop") |> mutate(prop=round((n/sum(n)),digits = 3))
+
+missingFips = missingFips |> filter(is.na(`APN SEQUENCE NUMBER`)==FALSE) |> summarise(n=n())
+
+
+dbDisconnect(con)
+````
+
+### Detailing the lackluster info for Native Reservations around 3000 people but only 2 deeds and the county and fips are off for one of them
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+kodzebue=fullData |> filter(`DEED SITUS CITY - STATIC`=="KOTZEBUE") |> select(`FIPS CODE`,`DEED SITUS CITY - STATIC`,`DEED SITUS COUNTY - STATIC`)
+print(kodzebue)
+
+
+dbDisconnect(con)
+
+````
+
+## LollipopCreator() 
+
+#### This function creates a Lollipop graph so for the parameter column you give a column in the database which is the parameter column and then give the column number for which you want to start at and end is the column you want to end at. So the LollipopCreator() makes a lollipop graph comparing the missigness for the specific columns you chose given when the column paramter you gave is present and not present.I also added list parameter so you can add a list with specific values rather than having to choose a specific value. Also the type parameter adds a filter to the specific column parameter in order to have more specific lollipop graphs. More parameters added to give more specific lollipop graphs. 
+
+##### Important Realization columns 3 and 4 are equal in presence APN Sequence Number 
+````{R}
+library(ggplot2)
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+
+
+
+statenewabb = c("DC", state.abb)
+statenewabb=sort(statenewabb,TRUE)
+
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+x=length(statenewabb)
+
+#' Title
+#'
+#' @param column string given x gives % complete 
+#' @param start numeric where in fullData you want to begin put "" if you want to use list instead
+#' @param end numeric where in fullData you want to end  put "" if you want to use list instead
+#' @param list type list put in a list with the exact column names from full Data "" if you want to use top 2 instead
+#' @param type string if you want to filter column put "" if you don't want to filter 
+#' @param filter string if you want to filter a column in start-end or list put "" if you don't want to filter 
+#' @param na    boolean set TRUE if you want to include NA's else FALSE to exclude NA's 
+#'
+#' @return lollipop graph
+#' @export
+#'
+#' @examples LollipopCreator("PRIMARY CATEGORY CODE",90,103,"","A","",TRUE) given ARMS sales or not what % is complete also includes NA's however PRIMARY CATEGORY CODE has no NA's so it doesn't really matter 
+LollipopCreator= function(column,start,end,list,type,filter,na,graph,state){
+if(start!=""){
+ColumnNameList = colnames(fullData)[start:end]
+}
+else{
+ColumnNameList = list 
+  
+}
+
+if(!graph){
+missing = numeric(length(statenewabb)*length(ColumnNameList))
+  nonmissing = numeric(length(statenewabb)*length(ColumnNameList))
+  difference=numeric(length(statenewabb)*length(ColumnNameList))
+column = as.name(column)
+}
+else{
+missing = numeric(length(ColumnNameList))
+  nonmissing = numeric(length(ColumnNameList))
+column = as.name(column)  
+ 
+}
+
+if (type==""){
+MissingColumn=fullData |> filter(is.na(column)) 
+PresentColumn=fullData |> filter(!is.na(column))
+MissingColumnValue=fullData |> filter(is.na(column)) |> summarise(n=n()) |> pull(n)
+PresentColumnValue=fullData |> filter(!is.na(column)) |> summarise(n=n()) |> pull(n)
+}
+  
+else{
+if(!na&!graph&state){
+#now just groups by state take it out if not 
+MissingColumn=fullData |> filter(column!=type) 
+PresentColumn=fullData |> filter(column==type)
+MissingColumnValue=fullData |> filter(column!=type) |> group_by(`DEED SITUS STATE - STATIC`) |> summarise("Non A"=n()) 
+PresentColumnValue=fullData |> filter(column==type) |> group_by(`DEED SITUS STATE - STATIC`) |> summarise("A"=n())
+
+}
+else if(na&!graph&state){
+MissingColumn=fullData |> filter(column!=type||is.na(column)) 
+PresentColumn=fullData |> filter(column==type)
+MissingColumnValue=fullData |> filter(column!=type||is.na(column)) |> group_by(`DEED SITUS STATE - STATIC`)  |> summarise(n=n()) |> arrange(desc(`DEED SITUS STATE - STATIC`)) |> pull(n)
+PresentColumnValue=fullData |> filter(column==type) |> group_by(`DEED SITUS STATE - STATIC`)  |> summarise(n=n()) |> arrange(desc(`DEED SITUS STATE - STATIC`)) |> pull(n)  
+}
+else if(!state & na){
+MissingColumn=fullData |> filter(column!=type||is.na(column)) 
+PresentColumn=fullData |> filter(column==type)
+MissingColumnValue=fullData |> filter(column!=type||is.na(column)) |> group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`)  |> summarise(n=n(), .groups = 'drop') |> arrange(desc(`DEED SITUS STATE - STATIC`),desc(`FIPS CODE`)) |> pull(n)
+PresentColumnValue=fullData |> filter(column==type) |> group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`)  |> summarise(n=n(), .groups = 'drop') |>  arrange(desc(`DEED SITUS STATE - STATIC`),desc(`FIPS CODE`))|> pull(n)    
+  
+  
+}
+else if(!state & !na) {
+MissingColumn=fullData |> filter(column!=type) 
+PresentColumn=fullData |> filter(column==type)
+MissingColumnValue=fullData |> filter(column!=type) |> group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`)  |> summarise("Non A"=n()) 
+PresentColumnValue=fullData |> filter(column==type) |> group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`)  |> summarise("A"=n())  
+
+  
+}
+
+else if(graph & !na){
+MissingColumn=fullData |> filter(column!=type) 
+PresentColumn=fullData |> filter(column==type)
+MissingColumnValue=fullData |> filter(column!=type)  |> summarise(n=n()) 
+PresentColumnValue=fullData |> filter(column==type) |> summarise(n=n()) 
+  
+}
+else{
+MissingColumn=fullData |> filter(column!=type||is.na(column)) 
+PresentColumn=fullData |> filter(column==type)
+MissingColumnValue=fullData |> filter(column!=type||is.na(column))  |> summarise(n=n()) |> pull(n)
+PresentColumnValue=fullData |> filter(column==type) |> summarise(n=n()) |> pull(n)     
+  
+  
+}
+}
+
+
+  
+  
+for(i in 1:length(ColumnNameList)){
+if((filter==""||i!=1)&(!graph&state)) {
+colu=paste0("Non A ",ColumnNameList[i])
+col=paste0("Non A ",ColumnNameList[i]," % Complete")
+co=paste0("A ",ColumnNameList[i])
+c=paste0("A ",ColumnNameList[i]," % Complete")
+ValuePresentNonColumn= MissingColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> group_by(`DEED SITUS STATE - STATIC`)  |> summarise(!!sym(colu):=n()) 
+
+NonA=left_join(ValuePresentNonColumn,MissingColumnValue,by ="DEED SITUS STATE - STATIC",keep = TRUE )
+NonA=NonA |> mutate(!!sym(col):=!!sym(colu)/`Non A`) |> select(-c(`DEED SITUS STATE - STATIC.x`,!!sym(colu),`Non A`)) |> rename(`DEED SITUS STATE - STATIC`=`DEED SITUS STATE - STATIC.y`)
+
+
+
+ValuePresentColumn=PresentColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> group_by(`DEED SITUS STATE - STATIC`) |> summarise(!!sym(co):=n()) 
+
+A=left_join(ValuePresentColumn,PresentColumnValue,by ="DEED SITUS STATE - STATIC",keep = TRUE )
+A=A |> mutate(!!sym(c):=!!sym(co)/`A`) |> select(-c(`DEED SITUS STATE - STATIC.x`,!!sym(co),`A`)) |> rename(`DEED SITUS STATE - STATIC`=`DEED SITUS STATE - STATIC.y`)
+
+columnname=as.character(ColumnNameList[i])
+Difference=left_join(NonA,A,by="DEED SITUS STATE - STATIC") |>mutate(difference=!!sym(c)-!!sym(col)) |> mutate(Binary=case_when(
+   difference>0 ~ 1,
+   difference<=0 ~ 0
+ )) |>select(-c(!!sym(c),!!sym(col))) |> mutate("Column" = columnname ) |> relocate(Column, .after = `DEED SITUS STATE - STATIC`)
+
+
+if(i==1){
+Binder=Difference
+allData=Difference
+}
+else{
+allData=Binder |>  union_all(Difference)
+Binder=allData
+}
+}
+else if(!state &!graph){
+colu=paste0("Non A ",ColumnNameList[i]) 
+col=paste0("Non A ",ColumnNameList[i]," % Complete")
+co=paste0("A ",ColumnNameList[i])
+c=paste0("A ",ColumnNameList[i]," % Complete")
+ValuePresentNonColumn= MissingColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`)  |> summarise(!!sym(colu):=n()) 
+
+#print(MissingColumnValue)
+NonA=left_join(ValuePresentNonColumn,MissingColumnValue,by=c("FIPS CODE","DEED SITUS STATE - STATIC"))
+
+NonA=NonA |> mutate(!!sym(col):=!!sym(colu)/`Non A`) |> select(-c(!!sym(colu),`Non A`))
+
+
+
+ValuePresentColumn=PresentColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`)  |> summarise(!!sym(co):=n()) 
+
+A=left_join(ValuePresentColumn,PresentColumnValue,by=c("FIPS CODE","DEED SITUS STATE - STATIC"))
+A=A |> mutate(!!sym(c):=!!sym(co)/`A`) |> select(-c(!!sym(co),`A`))
+columnname=as.character(ColumnNameList[i])
+Difference=left_join(NonA,A,by=c("FIPS CODE","DEED SITUS STATE - STATIC")) |>mutate(difference=!!sym(c)-!!sym(col)) |> mutate(Binary=case_when(
+   difference>0 ~ 1,
+   difference<=0 ~ 0
+ )) |>select(-c(!!sym(c),!!sym(col))) |> mutate("Column" = columnname ) |> relocate(Column, .after = `DEED SITUS STATE - STATIC`)
+
+
+print(Difference)
+
+if(i==1){
+Binder=Difference
+allData=Difference
+}
+else{
+allData=Binder |>  union_all(Difference)
+Binder=allData
+}
+}
+  
+  
+else if(i==1 & filter!=""){
+  filter_col == sym(ColumnNameList[i])
+  ValuePresentNonColumn == MissingColumn %>% filter(!!filter_col != filter) %>% summarise(n=n()) %>% pull(n)
+  ValuePresentColumn == PresentColumn %>% filter(!!filter_col == filter) %>% summarise(n=n()) %>% pull(n)
+
+  ValueNonColumn = ValuePresentNonColumn / MissingColumnValue
+  ValueColumn = ValuePresentColumn / PresentColumnValue  
+
+  missing[i] = ValueNonColumn
+  nonmissing[i] = ValueColumn  
+
+}
+else{
+ValuePresentNonColumn= MissingColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> summarise(n=n())|> pull(n)
+ValuePresentColumn=PresentColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> summarise(n=n())|> pull(n)
+
+ValueNonColumn=ValuePresentNonColumn/MissingColumnValue
+ValueColumn=ValuePresentColumn/PresentColumnValue  
+
+missing[i]=ValueNonColumn
+nonmissing[i]=ValueColumn  
+  
+  
+}
+
+}
+
+if(graph){
+LollipopData=data.frame(MissingSomething=missing, PresentColumn=nonmissing)
+row.names(LollipopData)=ColumnNameList
+}
+else{
+
+return(allData)
+
+}
+  
+
+if(graph){
+ ggplot(LollipopData) + 
+    geom_segment(aes(x = ColumnNameList, xend = ColumnNameList, y = MissingSomething, yend = PresentColumn), color = "grey") +
+    geom_point(aes(x = ColumnNameList, y = MissingSomething), color = rgb(0.7, 0.2, 0.1, 0.5), size = 3) +
+    geom_point(aes(x = ColumnNameList, y = PresentColumn), color = rgb(0.2, 0.7, 0.1, 0.5), size = 3) +
+    coord_flip() +
+    labs(
+      x = "Columns",
+      y = "% Complete",
+      title = paste("% Complete given ", column,type, "vs. no ", column,type),
+      subtitle = "No/Missing vs. Present values across columns", caption = paste("RED=No/Missing ",column,type, "GREEN=Present #",column,type, if(na){ "includes NA's"} else{ "excludes NA's"}) 
+    ) +
+    ylim(0, 1) +
+    theme_minimal() +
+    theme(
+      legend.position = "right",  # Adjust legend position as needed
+      plot.title = element_text(hjust = 0.5),  # Center the title
+     plot.subtitle = element_text(hjust = 0.5)  # Center the subtitle
+    )}}
+
+#LollipopCreator("SALE AMOUNT",16,23,"","")
+#TryList=c("SALE AMOUNT","DEED SITUS ZIP CODE - STATIC","DEED SITUS CITY - STATIC")
+#LollipopCreator("PRIMARY CATEGORY CODE",1,15,"","A","",TRUE)
+#LollipopCreator("PRIMARY CATEGORY CODE",15,30,"","A","",TRUE)
+#LollipopCreator("PRIMARY CATEGORY CODE",30,45,"","A","",TRUE)
+#LollipopCreator("PRIMARY CATEGORY CODE",45,60,"","A","",TRUE)
+#LollipopCreator("PRIMARY CATEGORY CODE",60,75,"","A","",TRUE)
+#LollipopCreator("PRIMARY CATEGORY CODE",75,90,"","A","",TRUE)
+#LollipopCreator("PRIMARY CATEGORY CODE",90,103,"","A","",TRUE)
+
+#LollipopCreator("PRIMARY CATEGORY CODE",2,2,"","A","",FALSE,FALSE)
+#LollipopCreator("PRIMARY CATEGORY CODE",2,2,"","A","",TRUE,FALSE)
+#ArmsLengthFull=LollipopCreator("PRIMARY CATEGORY CODE",1,103,"","A","",FALSE,FALSE)
+#print(ArmsLengthFull)
+#write.csv(ArmsLengthFull,"~/cl-validation/Output/ArmsLengthFull.csv")
+ArmsLengthFipsData=LollipopCreator("PRIMARY CATEGORY CODE",1,103,"","A","",FALSE,FALSE,FALSE)
+#print(ArmsLengthData)
+#write.csv(ArmsLengthData,"~/cl-validation/Output/ArmsLengthData.csv")
+write.csv(ArmsLengthFipsData,"~/cl-validation/Output/ArmsLengthFipsData.csv")
+#disconnects in order to avoid garbage collecting 
+dbDisconnect(con)
+````
+
+
+
+
+
+
+
+
+
+
+````{R}
+Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData.csv")
+Data=Data |> filter(`Column`=="LAND USE CODE - STATIC")
+
+counties <- counties(cb = TRUE) |> shift_geometry()  
+
+ 
+join_data <- left_join(
+  Data, 
+  counties, 
+  by = c(`FIPS.CODE` = "GEOID", `DEED.SITUS.STATE...STATIC` = "STUSPS"), 
+  keep = TRUE
+)
+join_data=join_data|>filter(!is.na(NAME))
+
+
+ggplot() +
+  geom_sf(data = join_data, aes(fill = difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  theme_void()
+
+
+ggplot() +
+ geom_sf(data = join_data, aes(fill = Binary, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+ theme_minimal() +
+  labs(fill = "Red=Arms Length More Complete Green=Arms Length More Missing", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  theme_void()
+
+PlotMaker=function(fips,column,binary){
+if(fips){
+Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData.csv")  
+Data=Data |> filter(`Column`==column)
+counties <- counties(cb = TRUE) |> shift_geometry() 
+join_data <- left_join(
+  Data, 
+  counties, 
+  by = c(`FIPS.CODE` = "GEOID", `DEED.SITUS.STATE...STATIC` = "STUSPS"), 
+  keep = TRUE
+)
+join_data=join_data|>filter(!is.na(NAME))
+if(binary){
+ggplot() +
+  geom_sf(data = join_data, aes(fill = Binary, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  theme_void()
+}
+else{
+ ggplot() +
+  geom_sf(data = join_data, aes(fill = difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  theme_void() 
+  
+  
+  
+}
+  }  
+else{
+Data=read_csv("~/cl-validation/Output/ArmsLengthData.csv")  
+Data=Data |> filter(`Column`==column)  
+  
+  
+JoinedData=left_join(Data, shift_geometry(states(cb=TRUE)), 
+                          by = c(`DEED.SITUS.STATE...STATIC` = "STUSPS"), 
+                          keep = TRUE)
+if(binary){
+ggplot() +
+  geom_sf(data = JoinedData, aes(fill = Binary, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  theme_void()  
+}
+else{
+ggplot() +
+  geom_sf(data = JoinedData, aes(fill = difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  theme_void()   
+  
+  
+  
+}  
+}  
+  
+}
+
+PlotMaker(FALSE,"LAND USE CODE - STATIC",TRUE)
+PlotMaker(FALSE,"LAND USE CODE - STATIC",FALSE)
+````
+
+
+
+````{R}
+
+Data=read_csv("~/cl-validation/Output/ArmsLengthFull.csv")
+Data=Data |> filter(`Column`=="COUNTY USE DESCRIPTION - STATIC")
+JoinedData=left_join(Data, shift_geometry(states(cb=TRUE)), 
+                          by = c(`DEED SITUS STATE - STATIC` = "STUSPS"), 
+                          keep = TRUE)
+
+
+
+ggplot() +
+  geom_sf(data = JoinedData, aes(fill = difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  theme_void()
+ggplot() +
+  geom_sf(data = JoinedData, aes(fill = Difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "Red=Arms Length More Complete Green=Arms Length More Missing", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  theme_void()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Data=read_csv("~/cl-validation/Output/ArmsLengthFull.csv")
+Data=Data |> filter(`Column`=="SALE RECORDED DOCUMENT PAGE NUMBER")
+JoinedData=left_join(Data, shift_geometry(states(cb=TRUE)), 
+                          by = c(`DEED SITUS STATE - STATIC` = "STUSPS"), 
+                          keep = TRUE)
+
+
+
+ggplot() +
+  geom_sf(data = JoinedData, aes(fill = difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of SALE RECORDED DOCUMENT PAGE NUMBER ")+ 
+  theme_void()
+ggplot() +
+  geom_sf(data = JoinedData, aes(fill = Difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "Red=Arms Length More Complete Green=Arms Length More Missing", title= "Completeness of SALE RECORDED DOCUMENT PAGE NUMBER ")+ 
+  theme_void()
+
+Data=read_csv("~/cl-validation/Output/ArmsLengthFull.csv")
+Data=Data |> filter(`Column`=="SALE RECORDED DOCUMENT NUMBER")
+JoinedData=left_join(Data, shift_geometry(states(cb=TRUE)), 
+                          by = c(`DEED SITUS STATE - STATIC` = "STUSPS"), 
+                          keep = TRUE)
+print(Data)
+
+
+ggplot() +
+  geom_sf(data = JoinedData, aes(fill = difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of SALE RECORDED DOCUMENT NUMBER ")+ 
+  theme_void()
+ggplot() +
+  geom_sf(data = JoinedData, aes(fill = Difference, geometry = geometry)) +
+ scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "Red=Arms Length More Complete Green=Arms Length More Missing", title= "Completeness of SALE RECORDED DOCUMENT NUMBER ")+ 
+  theme_void()
+
+Data=read_csv("~/cl-validation/Output/ArmsLengthFull.csv")
+Data=Data |> filter(`Column`=="SALE RECORDED DOCUMENT BOOK NUMBER")
+JoinedData=left_join(Data, shift_geometry(states(cb=TRUE)), 
+                          by = c(`DEED SITUS STATE - STATIC` = "STUSPS"), 
+                          keep = TRUE)
+
+
+
+ggplot() +
+  geom_sf(data = JoinedData, aes(fill = difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of SALE RECORDED DOCUMENT BOOK NUMBER ")+ 
+  theme_void()
+ggplot() +
+  geom_sf(data = JoinedData, aes(fill = Difference, geometry = geometry)) +
+ scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "Red=Arms Length More Complete Green=Arms Length More Missing", title= "Completeness of SALE RECORDED DOCUMENT BOOK NUMBER ")+ 
+  theme_void()
+
+
+````
+
+````{R}
+ArmsLengthFullFips=read_csv("~/cl-validation/Output/ArmsLengthFullFips.csv")
+ArmsLengthFullFips=ArmsLengthFullFips |> filter(`Column`=="SALE RECORDED DOCUMENT PAGE NUMBER")
+
+
+counties <- counties(cb = TRUE) |> shift_geometry()  
+#print(counties)
+
+ 
+join_data <- left_join(
+  ArmsLengthFullFips, 
+  counties, 
+  by = c(`FIPS CODE` = "GEOID", `DEED SITUS STATE - STATIC` = "STUSPS"), 
+  keep = TRUE
+)
+join_data=join_data|>filter(!is.na(NAME))
+print(join_data)
+
+ggplot() +
+  geom_sf(data = join_data, aes(fill = Difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "Green=Arms Length More Complete RED=Arms Length More Missing", title= "Completeness of SALE RECORDED DOCUMENT PAGE NUMBER ")+ 
+  theme_void()
+
+
+
+
+
+
+
+ArmsLengthFullFips=read_csv("~/cl-validation/Output/ArmsLengthFullFips.csv")
+ArmsLengthFullFips=ArmsLengthFullFips |> filter(`Column`=="SALE RECORDED DOCUMENT NUMBER")
+
+
+counties <- counties(cb = TRUE) |> shift_geometry()  
+#print(counties)
+
+ 
+join_data <- left_join(
+  ArmsLengthFullFips, 
+  counties, 
+  by = c(`FIPS CODE` = "GEOID", `DEED SITUS STATE - STATIC` = "STUSPS"), 
+  keep = TRUE
+)
+join_data=join_data|>filter(!is.na(NAME))
+
+
+ggplot() +
+  geom_sf(data = join_data, aes(fill = Difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "Green=Arms Length More Complete RED=Arms Length More Missing", title= "Completeness of SALE RECORDED DOCUMENT NUMBER")+ 
+  theme_void()
+````
+
+
+### SCRATCH 
+````{R}
+
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+
+fullData = tbl(con, "deeds")
+pr=fullData |> filter(`DEED SITUS STATE - STATIC`=="WY") |> filter(`FIPS CODE`==48007)
+#pr = fullData |> filter(!is.na(`APN (PARCEL NUMBER UNFORMATTED)`)) |> filter(is.na(`APN SEQUENCE NUMBER`)) |> summarise(n=n())
+#pr = fullData |>  filter(`DEED SITUS STATE - STATIC` %in% statenewabb) 
+  ##|>  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+print(pr)
+
+
+
+dbDisconnect(con)
+````
