@@ -31,6 +31,8 @@ library(sf)
 
 #### The goal of TibbleCreator() is to create a table and csv that checks the missingness for the column provided in fullData hence the parameter column. It also can do it on a state or county basis with the region parameter. The year parameter asks whether you want on a yearly basis or overall. FIPS parameter asks whether you want it on FIPS or county. For Column you must provide one of the 103 columns in fullData that matches exactly, for the Region Parameter, you must either put `DEED SITUS STATE - STATIC` for state or `DEED SITUS COUNTY - STATIC` for county, for the YEAR parameter you must input TRUE if you want it on a yearly basis and false if not, likewise for FIPS you need to put in TRUE if you want to do it by FIPS rather than county and False if not. fullDaa, StateYearData, CountyYearData, etc are necessities for TibbleCreator() to work since they are called in it. ALSO** FIPS only works on County since it is on a county basis, the function will still work but have no difference if FIPS was set to False.
 
+### The table below looks at the difference between SALE RECORDED DOCUMENT PAGE NUMBER & SALE RECORDED DOCUMENT NUMBER
+
 ````{R}
 #Creates a database connection to cl.db which is the unzipped db file with deeds as the table and is a db file
 con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
@@ -321,6 +323,8 @@ return(data)
 #data=tibbleCreator("DEED SITUS ZIP CODE - STATIC","DEED SITUS STATE - STATIC",FALSE)
 #data=tibbleCreator("EFFECTIVE YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",FALSE)
 #data=tibbleCreator("FIPS CODE","DEED SITUS COUNTY - STATIC",FALSE)
+print(tibbleCreator("SALE RECORDED DOCUMENT NUMBER","DEED SITUS STATE - STATIC",FALSE,FALSE))
+print(tibbleCreator("SALE RECORDED DOCUMENT PAGE NUMBER","DEED SITUS STATE - STATIC",FALSE,FALSE))
 #disconnects in order to avoid garbage collecting 
 dbDisconnect(con)
 ````
@@ -576,6 +580,8 @@ dbDisconnect(con)
 
 #### This function creates a Lollipop graph so for the parameter column you give a column in the database which is the parameter column and then give the column number for which you want to start at and end is the column you want to end at. So the LollipopCreator() makes a lollipop graph comparing the missigness for the specific columns you chose given when the column paramter you gave is present and not present.I also added list parameter so you can add a list with specific values rather than having to choose a specific value. Also the type parameter adds a filter to the specific column parameter in order to have more specific lollipop graphs. More parameters added to give more specific lollipop graphs. 
 
+### LollipopCreator() has grown quite large with many more parameters, but depending on the needs of the research I may add more conditionals since right now I don't have all possible cases since I haven't had the need for them 
+
 ##### Important Realization columns 3 and 4 are equal in presence APN Sequence Number 
 ````{R}
 library(ggplot2)
@@ -602,11 +608,15 @@ x=length(statenewabb)
 #' @param type string if you want to filter column put "" if you don't want to filter 
 #' @param filter string if you want to filter a column in start-end or list put "" if you don't want to filter 
 #' @param na    boolean set TRUE if you want to include NA's else FALSE to exclude NA's 
+#' @param graph boolean set TRUE if you want a graph else set FALSE if not 
+#' @param state  boolean set TRUE if you want state rather than county if you want county(FIPS) then FALSE
+#' 
 #'
 #' @return lollipop graph
 #' @export
 #'
-#' @examples LollipopCreator("PRIMARY CATEGORY CODE",90,103,"","A","",TRUE) given ARMS sales or not what % is complete also includes NA's however PRIMARY CATEGORY CODE has no NA's so it doesn't really matter 
+#' @examples LollipopCreator("PRIMARY CATEGORY CODE",47,49,"","A","",FALSE,FALSE,FALSE) creates filtered tabled for arms and non arms length sales for columns 47-49 on a county basis excluding NA's and no graph 
+#' 
 LollipopCreator= function(column,start,end,list,type,filter,na,graph,state){
 if(start!=""){
 ColumnNameList = colnames(fullData)[start:end]
@@ -747,7 +757,7 @@ Difference=left_join(NonA,A,by=c("FIPS CODE","DEED SITUS STATE - STATIC")) |>mut
  )) |>select(-c(!!sym(c),!!sym(col))) |> mutate("Column" = columnname ) |> relocate(Column, .after = `DEED SITUS STATE - STATIC`)
 
 
-print(Difference)
+
 
 if(i==1){
 Binder=Difference
@@ -833,10 +843,10 @@ if(graph){
 #ArmsLengthFull=LollipopCreator("PRIMARY CATEGORY CODE",1,103,"","A","",FALSE,FALSE)
 #print(ArmsLengthFull)
 #write.csv(ArmsLengthFull,"~/cl-validation/Output/ArmsLengthFull.csv")
-ArmsLengthFipsData=LollipopCreator("PRIMARY CATEGORY CODE",1,103,"","A","",FALSE,FALSE,FALSE)
+ArmsLengthFipsData=LollipopCreator("PRIMARY CATEGORY CODE",47,49,"","A","",FALSE,FALSE,FALSE)
 #print(ArmsLengthData)
 #write.csv(ArmsLengthData,"~/cl-validation/Output/ArmsLengthData.csv")
-write.csv(ArmsLengthFipsData,"~/cl-validation/Output/ArmsLengthFipsData.csv")
+write.csv(ArmsLengthFipsData,"~/cl-validation/Output/ArmsLengthFipsData47-49.csv")
 #disconnects in order to avoid garbage collecting 
 dbDisconnect(con)
 ````
@@ -849,41 +859,72 @@ dbDisconnect(con)
 
 
 
-
+### Visualization of data. Also the creation of PlotMaker() if you want a county map plot say TRUE else FALSE for the FIPS Parameter then put in the column you want to create a plot of, if you want a binary scale so 1 or 0 say TRUE for the third parameter else FALSE, also for FIPS the data file and complexity to download it for 103 files was too extensive so depending on the column you want you may need to replace it, I didn't put a parameter for now since I think it may be more worthwile to just put the csv file in. 
 ````{R}
-Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData.csv")
-Data=Data |> filter(`Column`=="LAND USE CODE - STATIC")
+library(readr)
+library(DBI)
+library(dbplyr)
+library(dplyr)
+library(duckdb)
+library(duckplyr)
+library(tidyr)
+library(tidyselect)
+library(tibble)
+library(RSQLite)
+library(stringr)
+library(rlang)
+library(styler) 
+library(sf)
+library(ggplot2)
+library(tigris)
 
-counties <- counties(cb = TRUE) |> shift_geometry()  
+#Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData.csv")
+#Data=Data |> filter(`Column`=="LAND USE CODE - STATIC")
+
+#counties <- counties(cb = TRUE) |> shift_geometry()  
 
  
-join_data <- left_join(
-  Data, 
-  counties, 
-  by = c(`FIPS.CODE` = "GEOID", `DEED.SITUS.STATE...STATIC` = "STUSPS"), 
-  keep = TRUE
-)
-join_data=join_data|>filter(!is.na(NAME))
+#join_data <- left_join(
+#  Data, 
+#  counties, 
+#  by = c(`FIPS.CODE` = "GEOID", `DEED.SITUS.STATE...STATIC` = "STUSPS"), 
+#  keep = TRUE
+#)
+#join_data=join_data|>filter(!is.na(NAME))
 
 
-ggplot() +
-  geom_sf(data = join_data, aes(fill = difference, geometry = geometry)) +
-scale_fill_distiller(palette = "RdYlGn", direction = 1) +
-  theme_minimal() +
-  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
-  theme_void()
+#ggplot() +
+#  geom_sf(data = join_data, aes(fill = difference, geometry = geometry)) +
+#scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+#  theme_minimal() +
+#  labs(fill = "Redder=more missing arms length Greener=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+ # theme_void()
 
 
-ggplot() +
- geom_sf(data = join_data, aes(fill = Binary, geometry = geometry)) +
-scale_fill_distiller(palette = "RdYlGn", direction = 1) +
- theme_minimal() +
-  labs(fill = "Red=Arms Length More Complete Green=Arms Length More Missing", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
-  theme_void()
+#ggplot() +
+# geom_sf(data = join_data, aes(fill = Binary, geometry = geometry)) +
+#scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+# theme_minimal() +
+#  labs(fill = "Red=Arms Length More Complete Green=Arms Length More Missing", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+ # theme_void()
 
+#' Title
+#'
+#' @param fips Boolean TRUE=County Map plot FALSE= State Map plot
+#' @param column String put in the column you want a map of 
+#' @param binary 
+#'
+#' @return visual plot 
+#' @export
+#'
+#' @examples PlotMaker(TRUE,"SALE RECORDED DOCUMENT NUMBER",TRUE) Returns a county map plot for the column "SALE RECORDED DOCUMENT NUMBER" on a binary scale shows the comparison between arms length and non arms length 
 PlotMaker=function(fips,column,binary){
+if(column=="SALE RECORDED DOCUMENT NUMBER"){
+column="SALE RECORDED DOCUMENT NUMBER"
+}
+  
 if(fips){
-Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData.csv")  
+Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData47-49.csv")  
 Data=Data |> filter(`Column`==column)
 counties <- counties(cb = TRUE) |> shift_geometry() 
 join_data <- left_join(
@@ -894,19 +935,22 @@ join_data <- left_join(
 )
 join_data=join_data|>filter(!is.na(NAME))
 if(binary){
+TITLE=paste0("Completeness of ",column)
 ggplot() +
   geom_sf(data = join_data, aes(fill = Binary, geometry = geometry)) +
 scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   theme_minimal() +
-  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  labs(fill = "Redder=more missing arms length Greener=more complete arms length", title= TITLE)+ 
   theme_void()
+
 }
 else{
- ggplot() +
+ TITLE=paste0("Completeness of ",column)
+  ggplot() +
   geom_sf(data = join_data, aes(fill = difference, geometry = geometry)) +
 scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   theme_minimal() +
-  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  labs(fill = "Redder=more missing arms length Greener=more complete arms length", title= TITLE)+ 
   theme_void() 
   
   
@@ -922,19 +966,21 @@ JoinedData=left_join(Data, shift_geometry(states(cb=TRUE)),
                           by = c(`DEED.SITUS.STATE...STATIC` = "STUSPS"), 
                           keep = TRUE)
 if(binary){
+TITLE=paste0("Completeness of ",column)
 ggplot() +
   geom_sf(data = JoinedData, aes(fill = Binary, geometry = geometry)) +
 scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   theme_minimal() +
-  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  labs(fill = "Redder=more missing arms length Greener=more complete arms length", title= TITLE)+ 
   theme_void()  
 }
 else{
+TITLE=paste0("Completeness of ",column)
 ggplot() +
   geom_sf(data = JoinedData, aes(fill = difference, geometry = geometry)) +
 scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   theme_minimal() +
-  labs(fill = "-=more missing arms length +=more complete arms length", title= "Completeness of COUNTY USE DESCRIPTION - STATIC ")+ 
+  labs(fill = "Redder=more missing arms length Greener=more complete arms length", title= TITLE)+ 
   theme_void()   
   
   
@@ -944,12 +990,14 @@ scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   
 }
 
-PlotMaker(FALSE,"LAND USE CODE - STATIC",TRUE)
-PlotMaker(FALSE,"LAND USE CODE - STATIC",FALSE)
+PlotMaker(FALSE,"SALE RECORDED DOCUMENT PAGE NUMBER",TRUE)
+PlotMaker(FALSE,"SALE RECORDED DOCUMENT NUMBER",TRUE)
+PlotMaker(TRUE,"SALE RECORDED DOCUMENT PAGE NUMBER",TRUE)
+PlotMaker(TRUE,"SALE RECORDED DOCUMENT NUMBER",TRUE)
 ````
 
 
-
+#### How I did it previously without the function and the longer way of LollipopCreator()
 ````{R}
 
 Data=read_csv("~/cl-validation/Output/ArmsLengthFull.csv")
@@ -1054,6 +1102,8 @@ ggplot() +
 
 ````
 
+
+#### How I did it previously without the function and the longer way of LollipopCreator()
 ````{R}
 ArmsLengthFullFips=read_csv("~/cl-validation/Output/ArmsLengthFullFips.csv")
 ArmsLengthFullFips=ArmsLengthFullFips |> filter(`Column`=="SALE RECORDED DOCUMENT PAGE NUMBER")
@@ -1072,8 +1122,7 @@ join_data <- left_join(
 join_data=join_data|>filter(!is.na(NAME))
 print(join_data)
 
-ggplot() +
-  geom_sf(data = join_data, aes(fill = Difference, geometry = geometry)) +
+ggplot()  +  geom_sf(data = join_data, aes(fill = Difference, geometry = geometry)) +
 scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   theme_minimal() +
   labs(fill = "Green=Arms Length More Complete RED=Arms Length More Missing", title= "Completeness of SALE RECORDED DOCUMENT PAGE NUMBER ")+ 
@@ -1111,20 +1160,24 @@ scale_fill_distiller(palette = "RdYlGn", direction = 1) +
 ````
 
 
-### SCRATCH 
+### IMPORTANT For Quitclaim and Grant Deeds, with Arms Length Sales there is less missingness of SALE RECORDED DOCUMENT PAGE NUMBER; however that is not the case with "SALE RECORDED DOCUMENT NUMBER" True that there is less missingness with SALE RECORDED DOCUMENT NUMBER for these deeds 
 ````{R}
 
 con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
 
 fullData = tbl(con, "deeds")
-pr=fullData |> filter(`DEED SITUS STATE - STATIC`=="WY") |> filter(`FIPS CODE`==48007)
+#pr=fullData  |>  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)  |> filter(`FIPS CODE`=="32023") |> filter(!is.na(`SALE #RECORDED DOCUMENT PAGE NUMBER`))
 #pr = fullData |> filter(!is.na(`APN (PARCEL NUMBER UNFORMATTED)`)) |> filter(is.na(`APN SEQUENCE NUMBER`)) |> summarise(n=n())
 #pr = fullData |>  filter(`DEED SITUS STATE - STATIC` %in% statenewabb) 
   ##|>  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
-
+pr=fullData  |>  filter(`DEED SITUS STATE - STATIC` %in% statenewabb) |> filter(`DEED CATEGORY TYPE CODE`=="U" || `DEED CATEGORY TYPE CODE`=="Q" || `DEED CATEGORY TYPE CODE`=="G") |> group_by(`PRIMARY CATEGORY CODE`,`DEED CATEGORY TYPE CODE`,is.na(`SALE RECORDED DOCUMENT NUMBER`))|> summarise(n=n())  |> mutate("Proportion"=n/sum(n)) |> arrange(desc(`DEED CATEGORY TYPE CODE`),desc(`PRIMARY CATEGORY CODE`))
 print(pr)
 
 
+pr=fullData  |>  filter(`DEED SITUS STATE - STATIC` %in% statenewabb) |> filter(`DEED CATEGORY TYPE CODE`=="U" || `DEED CATEGORY TYPE CODE`=="Q" || `DEED CATEGORY TYPE CODE`=="G") |> group_by(`PRIMARY CATEGORY CODE`,`DEED CATEGORY TYPE CODE`,is.na(`SALE RECORDED DOCUMENT PAGE NUMBER`))|> summarise(n=n())  |> mutate("Proportion"=n/sum(n)) |> arrange(desc(`DEED CATEGORY TYPE CODE`),desc(`PRIMARY CATEGORY CODE`))
+print(pr)
+#pr=fullData  |>  filter(`DEED SITUS STATE - STATIC` %in% statenewabb) |> filter(`DEED CATEGORY TYPE CODE`=="U")|>group_by(is.na(`SALE RECORDED DOCUMENT PAGE NUMBER`))|> summarise(n=n())
+#print(pr)
 
 dbDisconnect(con)
 ````
