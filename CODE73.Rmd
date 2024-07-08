@@ -29,7 +29,7 @@ library(sf)
 
 ## TibbleCreator() and its setup
 
-#### The goal of TibbleCreator() is to create a table and csv that checks the missingness for the column provided in fullData hence the parameter column. It also can do it on a state or county basis with the region parameter. The year parameter asks whether you want on a yearly basis or overall. FIPS parameter asks whether you want it on FIPS or county. For Column you must provide one of the 103 columns in fullData that matches exactly, for the Region Parameter, you must either put `DEED SITUS STATE - STATIC` for state or `DEED SITUS COUNTY - STATIC` for county, for the YEAR parameter you must input TRUE if you want it on a yearly basis and false if not, likewise for FIPS you need to put in TRUE if you want to do it by FIPS rather than county and False if not. fullDaa, StateYearData, CountyYearData, etc are necessities for TibbleCreator() to work since they are called in it. ALSO** FIPS only works on County since it is on a county basis, the function will still work but have no difference if FIPS was set to False.
+#### The goal of TibbleCreator() is to create a table and csv that checks the completeness for the column provided in fullData hence the parameter column. It also can do it on a state or county basis with the region parameter. The year parameter asks whether you want on a yearly basis or overall. FIPS parameter asks whether you want it on FIPS or county. For Column you must provide one of the 103 columns in fullData that matches exactly, for the Region Parameter, you must either put `DEED SITUS STATE - STATIC` for state or `DEED SITUS COUNTY - STATIC` for county, for the YEAR parameter you must input TRUE if you want it on a yearly basis and false if not, likewise for FIPS you need to put in TRUE if you want to do it by FIPS rather than county and False if not. fullDaa, StateYearData, CountyYearData, etc are necessities for TibbleCreator() to work since they are called in it. ALSO** FIPS only works on County since it is on a county basis, the function will still work but have no difference if FIPS was set to False.
 
 ### The table below looks at the difference between SALE RECORDED DOCUMENT PAGE NUMBER & SALE RECORDED DOCUMENT NUMBER
 
@@ -83,7 +83,7 @@ CountyFipsData=fullData |>
   summarize(n = n())
 
 
-#creates tibble for each column and reports the missingness 
+#creates tibble for each column and reports the Completeness
 #' tibbleCreator() Function
 #'
 #' @param column refers to the column in Corelogic 
@@ -132,7 +132,7 @@ data = data |>
 
 #Now gives the missingness 
 data = data |> 
-  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+  mutate("% Complete"= round((100* ((!!sym(colu))/(`Total Deeds`))), digits=2))  
 
 #Arranges in descending order 
 data = data |> 
@@ -170,9 +170,9 @@ data = data |>
   rename(`SALE DERIVED YEAR` = `substr(\`SALE DERIVED DATE\`, 1, 4)`)
 
 data = data |> 
-  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+ mutate("% Complete"= round((100* ((!!sym(colu))/(`Total Deeds`))), digits=2))  
 
-#Now gives the missingness 
+#Now gives the completeness
 data = data |> 
   arrange(desc(`DEED SITUS STATE - STATIC`),desc(`SALE DERIVED YEAR`))
 
@@ -211,7 +211,7 @@ data = data |>
 
 
 data = data |>
-  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+ mutate("% Complete"= round((100* ((!!sym(colu))/(`Total Deeds`))), digits=2)) 
 
 #Now gives the missingness 
 data = data |>
@@ -243,7 +243,7 @@ data = data |>
 
 
 data = data |>
-  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+  mutate("% Complete"= round((100* ((!!sym(colu))/(`Total Deeds`))), digits=2)) 
 
 #Now gives the missingness 
 data = data |>
@@ -286,7 +286,7 @@ data = data |>
   rename(`SALE DERIVED YEAR` = `substr(\`SALE DERIVED DATE\`, 1, 4)`)
 
 data = data |> 
-  mutate("% missing"= round((100* (1-(!!sym(colu))/(`Total Deeds`))), digits=2)) 
+ mutate("% Complete"= round((100* ((!!sym(colu))/(`Total Deeds`))), digits=2)) 
 
 
 data = data |>  
@@ -323,8 +323,16 @@ return(data)
 #data=tibbleCreator("DEED SITUS ZIP CODE - STATIC","DEED SITUS STATE - STATIC",FALSE)
 #data=tibbleCreator("EFFECTIVE YEAR BUILT - STATIC","DEED SITUS STATE - STATIC",FALSE)
 #data=tibbleCreator("FIPS CODE","DEED SITUS COUNTY - STATIC",FALSE)
-print(tibbleCreator("SALE RECORDED DOCUMENT NUMBER","DEED SITUS STATE - STATIC",FALSE,FALSE))
-print(tibbleCreator("SALE RECORDED DOCUMENT PAGE NUMBER","DEED SITUS STATE - STATIC",FALSE,FALSE))
+
+#Used to generate these 3 
+#tibbleCreator("SALE RECORDED DOCUMENT NUMBER","DEED SITUS COUNTY - STATIC",FALSE,TRUE)
+#tibbleCreator("SALE RECORDED DOCUMENT PAGE NUMBER","DEED SITUS COUNTY - STATIC",FALSE,TRUE)
+#tibbleCreator("SALE RECORDED DOCUMENT BOOK NUMBER","DEED SITUS COUNTY - STATIC",FALSE,TRUE)
+
+
+#DATa=tibbleCreator("SALE RECORDED DOCUMENT PAGE NUMBER","DEED SITUS COUNTY - STATIC",FALSE,TRUE)|>mutate(`% missing`=100-`% missing`)|> rename("% Complete"=`% missing`)
+#write_csv(DATa,"~/cl-validation/Output/SALE RECORDED DOCUMENT PAGE NUMBER")
+#print(tibbleCreator("SALE RECORDED DOCUMENT PAGE NUMBER","DEED SITUS STATE - STATIC",FALSE,FALSE))
 #disconnects in order to avoid garbage collecting 
 dbDisconnect(con)
 ````
@@ -918,11 +926,11 @@ library(tigris)
 #' @export
 #'
 #' @examples PlotMaker(TRUE,"SALE RECORDED DOCUMENT NUMBER",TRUE) Returns a county map plot for the column "SALE RECORDED DOCUMENT NUMBER" on a binary scale shows the comparison between arms length and non arms length 
-PlotMaker=function(fips,column,binary){
+PlotMaker=function(fips,column,binary,state){
 if(column=="SALE RECORDED DOCUMENT NUMBER"){
 column="SALE RECORDED DOCUMENT NUMBER"
 }
-  
+if(state=="") { 
 if(fips){
 Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData47-49.csv")  
 Data=Data |> filter(`Column`==column)
@@ -987,13 +995,50 @@ scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   
 }  
 }  
+}
+else{
+Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData47-49.csv")  
+Data=Data |> filter(`Column`==column) |> filter(`DEED.SITUS.STATE...STATIC`==state)
+counties <- counties(state=state,cb = TRUE) |> shift_geometry() 
+join_data <- left_join(
+  Data, 
+  counties, 
+  by = c(`FIPS.CODE` = "GEOID", `DEED.SITUS.STATE...STATIC` = "STUSPS"), 
+  keep = TRUE
+)
+join_data=join_data|>filter(!is.na(NAME))  
+if(binary){
+TITLE=paste0("Completeness of ",column)
+ggplot() +
+  geom_sf(data = join_data, aes(fill = Binary, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "Redder=more missing arms length Greener=more complete arms length", title= TITLE)+ 
+  theme_void()  
+}
+else{
+TITLE=paste0("Completeness of ",column)
+ggplot() +
+  geom_sf(data = join_data, aes(fill = difference, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "Redder=more missing arms length Greener=more complete arms length", title= TITLE)+ 
+  theme_void()   
+  
+  
+  
+} 
+  
   
 }
 
-PlotMaker(FALSE,"SALE RECORDED DOCUMENT PAGE NUMBER",TRUE)
-PlotMaker(FALSE,"SALE RECORDED DOCUMENT NUMBER",TRUE)
-PlotMaker(TRUE,"SALE RECORDED DOCUMENT PAGE NUMBER",TRUE)
-PlotMaker(TRUE,"SALE RECORDED DOCUMENT NUMBER",TRUE)
+}  
+
+
+#PlotMaker(FALSE,"SALE RECORDED DOCUMENT PAGE NUMBER",TRUE)
+#PlotMaker(FALSE,"SALE RECORDED DOCUMENT NUMBER",TRUE)
+#PlotMaker(TRUE,"SALE RECORDED DOCUMENT PAGE NUMBER",TRUE)
+PlotMaker(TRUE,"SALE RECORDED DOCUMENT NUMBER",TRUE,"CA")
 ````
 
 
@@ -1119,6 +1164,7 @@ join_data <- left_join(
   by = c(`FIPS CODE` = "GEOID", `DEED SITUS STATE - STATIC` = "STUSPS"), 
   keep = TRUE
 )
+print(join_data)
 join_data=join_data|>filter(!is.na(NAME))
 print(join_data)
 
@@ -1158,6 +1204,106 @@ scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   labs(fill = "Green=Arms Length More Complete RED=Arms Length More Missing", title= "Completeness of SALE RECORDED DOCUMENT NUMBER")+ 
   theme_void()
 ````
+
+````{R}
+
+Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData47-49.csv")  
+data=Data |> filter(`Column`=="SALE RECORDED DOCUMENT NUMBER")
+dAta=Data |> filter(`Column`=="SALE RECORDED DOCUMENT PAGE NUMBER")
+counties= counties(state="VA",cb = TRUE) |> shift_geometry()  
+
+join_data <- left_join(
+  data, 
+  counties, 
+    by = c(`FIPS.CODE` = "GEOID", `DEED.SITUS.STATE...STATIC` = "STUSPS"),  
+  keep = TRUE
+)
+join_data=join_data|>filter(!is.na(NAME))
+
+
+ggplot() +
+  geom_sf(data = join_data, aes(fill = Binary, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "Redder=more missing arms length Greener=more complete arms length", title= "SALE RECORDED DOCUMENT NUMBER")+ 
+  theme_void()
+
+
+join_data <- left_join(
+  dAta, 
+  counties, 
+    by = c(`FIPS.CODE` = "GEOID", `DEED.SITUS.STATE...STATIC` = "STUSPS"),  
+  keep = TRUE
+) 
+
+join_data=join_data|>filter(!is.na(NAME))
+print(join_data)
+ggplot() +
+  geom_sf(data = join_data, aes(fill = Binary, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(fill = "Redder=more missing arms length Greener=more complete arms length", title= "SALE RECORDED DOCUMENT PAGE NUMBER")+ 
+  theme_void()
+
+
+
+
+TibbleCreatorDataNorm=read_csv("~/cl-validation/Output/SRDN.csv")
+TibbleCreatorDataPage=read_csv("~/cl-validation/Output/SRDPN.csv")
+TibbleCreatorDataBook=read_csv("~/cl-validation/Output/SRDBN.csv")
+
+Tib_data <- left_join(
+  TibbleCreatorDataNorm, 
+  counties, 
+    by = c(`FIPS.CODE` = "GEOID", `DEED.SITUS.STATE...STATIC` = "STUSPS"),  
+  keep = TRUE
+)
+Tib_data=Tib_data|>filter(!is.na(NAME))
+
+
+ggplot() +
+  geom_sf(data = Tib_data, aes(fill = X..Complete, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(title= "SALE RECORDED DOCUMENT NUMBER % Complete")+ 
+  theme_void()
+
+TibP_data <- left_join(
+  TibbleCreatorDataPage, 
+  counties, 
+    by = c(`FIPS.CODE` = "GEOID", `DEED.SITUS.STATE...STATIC` = "STUSPS"),  
+  keep = TRUE
+)
+TibP_data=TibP_data|>filter(!is.na(NAME))
+
+
+ggplot() +
+  geom_sf(data = TibP_data, aes(fill = X..Complete, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(title= "SALE RECORDED DOCUMENT PAGE NUMBER % Complete")+ 
+  theme_void()
+
+TibB_data <- left_join(
+  TibbleCreatorDataBook, 
+  counties, 
+    by = c(`FIPS.CODE` = "GEOID", `DEED.SITUS.STATE...STATIC` = "STUSPS"),  
+  keep = TRUE
+)
+TibB_data=TibB_data|>filter(!is.na(NAME))
+
+
+ggplot() +
+  geom_sf(data = TibB_data, aes(fill = X..Complete, geometry = geometry)) +
+scale_fill_distiller(palette = "RdYlGn", direction = 1) +
+  theme_minimal() +
+  labs(title= "SALE RECORDED DOCUMENT BOOK NUMBER % Complete")+ 
+  theme_void()
+````
+
+
+
+
 
 
 ### IMPORTANT For Quitclaim and Grant Deeds, with Arms Length Sales there is less missingness of SALE RECORDED DOCUMENT PAGE NUMBER; however that is not the case with "SALE RECORDED DOCUMENT NUMBER" True that there is less missingness with SALE RECORDED DOCUMENT NUMBER for these deeds 
