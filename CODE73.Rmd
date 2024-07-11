@@ -22,7 +22,7 @@ library(stringr)
 library(rlang)
 library(styler) 
 library(sf)
-
+library(data.table)
 ````
 
 
@@ -45,9 +45,23 @@ fullData = tbl(con, "deeds")
 fullData = fullData |> 
   filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
 
+taxData=tbl(con,"tax")
+#taxData=taxData|>select(`YEAR BUILT`,`ACRES`,`LAND SQUARE FOOTAGE`,`UNIVERSAL BUILDING SQUARE FEET`,`UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE`,`BUILDING SQUARE FEET`,`BEDROOMS - ALL BUILDINGS`,`TOTAL BATHROOMS - ALL BUILDINGS`,`NUMBER OF BATHROOMS`,`FULL BATHS - ALL BUILDINGS`,`HALF BATHS - ALL BUILDINGS`,`FIPS CODE`,`CLIP`,`APN (PARCEL NUMBER UNFORMATTED)`,`ORIGINAL APN`,`APN SEQUENCE NUMBER`,`SITUS STATE`)
+taxData = taxData |> 
+  filter(`SITUS STATE` %in% statenewabb)
+taxData=taxData|>select(`HALF BATHS - ALL BUILDINGS`,`FIPS CODE`,`CLIP`,`SITUS STATE`,`SALE DATE`)
+fullData=fullData |>select(`FIPS CODE`,`CLIP`,`DEED SITUS STATE - STATIC`,`DEED SITUS COUNTY - STATIC`,`SALE DERIVED DATE`)
+TaxDeedsData = left_join(taxData, fullData, by = c("CLIP", "FIPS CODE")) |> mutate(Year=substr(`SALE DATE`,1,4),.after=`SALE DATE` ) 
+TaxDeedsData=TaxDeedsData|>distinct(`CLIP`,.keep_all = TRUE)
+
+#TaxDeedsData = left_join(taxData, fullData, by = c("CLIP", "FIPS CODE"))
 
 #Filters data to show how many deeds each state has at least listed 
 StateData = fullData |> 
+  group_by(`DEED SITUS STATE - STATIC`) |>
+  summarize(n = n())
+
+StateTaxData = TaxDeedsData |> 
   group_by(`DEED SITUS STATE - STATIC`) |>
   summarize(n = n())
 
@@ -82,6 +96,11 @@ CountyFipsData=fullData |>
   group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
   summarize(n = n())
 
+CountyFipsTaxData=TaxDeedsData|> 
+  filter(`DEED SITUS STATE - STATIC` != "NA"& `FIPS CODE`!="NA") |> 
+  group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  summarize(n = n())
+
 
 #creates tibble for each column and reports the Completeness
 #' tibbleCreator() Function
@@ -95,7 +114,7 @@ CountyFipsData=fullData |>
 #' @export
 #'
 #' @examples tibbleCreator("SALE AMOUNT","DEED SITUS STATE - STATIC",TRUE) Creates a table with the Sale Amount, with year data per state 
-tibbleCreator= function(column, region, year, fips) {
+tibbleCreator= function(column, region, year, fips,tax) {
 
 #turns column into variable rather than string
 column = as.name(column)
@@ -104,7 +123,7 @@ column = as.name(column)
 if(region == "DEED SITUS STATE - STATIC"){
 
 #Filters solely by state not year 
-  if(!year){
+  if(!year&!tax){
 
 #creates the column name 
 colu = paste0(toString(column)," PRESENT")
@@ -144,7 +163,34 @@ column = toString(column)
 csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,".csv")
 write.csv(data,csvtitle)
 return(data)}
+else if(tax&fips){
+colu = paste0(toString(column)," PRESENT")  
+region = as.name(region)  
+data = TaxDeedsData |> 
+          group_by(region) |>
+          filter(column !="NA") |> 
+         summarize(!!colu := n())  
+region = toString(region)
+data = left_join(data, StateTaxData, by=region)
+data = data |> 
+  rename("Total Deeds" = `n`)
 
+
+#Now gives the missingness 
+data = data |> 
+  mutate("% Complete"= round((100* ((!!sym(colu))/(`Total Deeds`))), digits=2))  
+
+#Arranges in descending order 
+data = data |> 
+  arrange(desc(`DEED SITUS STATE - STATIC`))
+
+
+#CREATES CSV File
+column = toString(column)
+csvtitle=paste0("/home/jc9154/cl-validation/Output/",column,region,".csv")
+write.csv(data,csvtitle)
+return(data)  
+}
 #Filters by state and year 
   else{
 
@@ -188,7 +234,7 @@ return(data) }}
 else{
 
   if(!year){
-
+    
 region = as.name(region)
 
 colu = paste0(toString(column)," PRESENT")
@@ -226,17 +272,32 @@ write.csv(data,csvtitle)
 return(data)
 }
 else {
+if(!tax){
 data = fullData |>
   filter(column != "NA"& `FIPS CODE`!="NA") |>
   filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
   group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
   summarize(!!colu := n()) 
-
+}
+else{
+data = TaxDeedsData |>
+  filter(column != "NA"& `FIPS CODE`!="NA") |>
+  filter(`DEED SITUS STATE - STATIC` != "NA" ) |>
+  group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`) |>
+  summarize(!!colu := n())   
+  
+  
+}
       
-
+if(!tax){
 data = data|> 
   left_join(CountyFipsData, data, by=c("DEED SITUS STATE - STATIC","FIPS CODE")) 
-
+}
+else{
+data = data|> 
+  left_join(CountyFipsTaxData, data, by=c("DEED SITUS STATE - STATIC","FIPS CODE"))   
+  
+}
 
 data = data |>
   rename("Total Deeds" = `n`)
@@ -328,8 +389,14 @@ return(data)
 #tibbleCreator("SALE RECORDED DOCUMENT NUMBER","DEED SITUS COUNTY - STATIC",FALSE,TRUE)
 #tibbleCreator("SALE RECORDED DOCUMENT PAGE NUMBER","DEED SITUS COUNTY - STATIC",FALSE,TRUE)
 #tibbleCreator("SALE RECORDED DOCUMENT BOOK NUMBER","DEED SITUS COUNTY - STATIC",FALSE,TRUE)
+##This is what my code looked to generate the csv files 
+#tibbleCreator("UNIVERSAL BUILDING SQUARE FEET","DEED SITUS COUNTY - STATIC",FALSE,TRUE,TRUE)
+#tibbleCreator("UNIVERSAL BUILDING SQUARE FEET","DEED SITUS STATE - STATIC",FALSE,TRUE,TRUE)
 
-
+#tibbleCreator("FULL BATHS - ALL BUILDINGS","DEED SITUS COUNTY - STATIC",FALSE,TRUE,TRUE)
+#tibbleCreator("FULL BATHS - ALL BUILDINGS","DEED SITUS STATE - STATIC",FALSE,TRUE,TRUE)
+tibbleCreator("HALF BATHS - ALL BUILDINGS","DEED SITUS COUNTY - STATIC",FALSE,TRUE,TRUE)
+tibbleCreator("HALF BATHS - ALL BUILDINGS","DEED SITUS STATE - STATIC",FALSE,TRUE,TRUE)
 #DATa=tibbleCreator("SALE RECORDED DOCUMENT PAGE NUMBER","DEED SITUS COUNTY - STATIC",FALSE,TRUE)|>mutate(`% missing`=100-`% missing`)|> rename("% Complete"=`% missing`)
 #write_csv(DATa,"~/cl-validation/Output/SALE RECORDED DOCUMENT PAGE NUMBER")
 #print(tibbleCreator("SALE RECORDED DOCUMENT PAGE NUMBER","DEED SITUS STATE - STATIC",FALSE,FALSE))
@@ -1210,7 +1277,7 @@ scale_fill_distiller(palette = "RdYlGn", direction = 1) +
 Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData47-49.csv")  
 data=Data |> filter(`Column`=="SALE RECORDED DOCUMENT NUMBER")
 dAta=Data |> filter(`Column`=="SALE RECORDED DOCUMENT PAGE NUMBER")
-counties= counties(state="VA",cb = TRUE) |> shift_geometry()  
+counties= counties(state="NJ",cb = TRUE) |> shift_geometry()  
 
 join_data <- left_join(
   data, 
@@ -1326,4 +1393,47 @@ print(pr)
 #print(pr)
 
 dbDisconnect(con)
+````
+
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+fullData=tbl(con,"deeds")
+
+print(fullData)
+
+
+````
+
+
+
+````{R}
+con = dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db")
+fullData=tbl(con,"deeds")
+taxData=tbl(con,"tax")
+#confull= dbConnect(duckdb(),"/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/CopyOfcl.db")
+#fData=tbl(confull,"deeds")
+#tData=tbl(confull,"tax")
+
+taxData=taxData|>select(`ACRES`,`FIPS CODE`,`CLIP`,`SITUS STATE`,`SALE DATE`)
+fullData=fullData |>select(`FIPS CODE`,`CLIP`,`DEED SITUS STATE - STATIC`,`DEED SITUS COUNTY - STATIC`,`SALE DERIVED DATE`)
+#print(fullData)
+#ALData=taxData|>filter(`SITUS STATE`=="AL")
+#print(ALData)
+
+# Perform the join on in-memory data
+TaxDeedsData = left_join(taxData, fullData, by = c("CLIP", "FIPS CODE")) |> mutate(Year=substr(`SALE DATE`,1,4),.after=`SALE DATE` ) 
+TaxDeedsData=TaxDeedsData|>distinct(`CLIP`,.keep_all = TRUE)
+#print(TaxDeedsData)
+#TaxDeedsData= TaxDeedsData|>arrange(desc(`year`))
+#print(TaxDeedsData)
+
+#TaxDeedsData = left_join(fData, tData, by = c("CLIP", "FIPS CODE")) 
+#print(TaxDeedsData)
+
+
+
+
+dbDisconnect(con)
+#dbDisconnect(confull)
+
 ````
