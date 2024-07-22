@@ -23,6 +23,10 @@ library(rlang)
 library(styler) 
 library(sf)
 library(data.table)
+library(tidyverse)
+
+library(modelr)
+options(na.action = na.warn)
 ````
 
 
@@ -46,12 +50,13 @@ fullData = fullData |>
   filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
 
 taxData=tbl(con,"tax")
+
 #taxData=taxData|>select(`YEAR BUILT`,`ACRES`,`LAND SQUARE FOOTAGE`,`UNIVERSAL BUILDING SQUARE FEET`,`UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE`,`BUILDING SQUARE FEET`,`BEDROOMS - ALL BUILDINGS`,`TOTAL BATHROOMS - ALL BUILDINGS`,`NUMBER OF BATHROOMS`,`FULL BATHS - ALL BUILDINGS`,`HALF BATHS - ALL BUILDINGS`,`FIPS CODE`,`CLIP`,`APN (PARCEL NUMBER UNFORMATTED)`,`ORIGINAL APN`,`APN SEQUENCE NUMBER`,`SITUS STATE`)
 taxData = taxData |> 
   filter(`SITUS STATE` %in% statenewabb)
-taxData=taxData|>select(`HALF BATHS - ALL BUILDINGS`,`FIPS CODE`,`CLIP`,`SITUS STATE`,`SALE DATE`)
-fullData=fullData |>select(`FIPS CODE`,`CLIP`,`DEED SITUS STATE - STATIC`,`DEED SITUS COUNTY - STATIC`,`SALE DERIVED DATE`)
-TaxDeedsData = left_join(taxData, fullData, by = c("CLIP", "FIPS CODE")) |> mutate(Year=substr(`SALE DATE`,1,4),.after=`SALE DATE` ) 
+taxData=taxData|>select(`YEAR BUILT`,`ACRES`,`LAND SQUARE FOOTAGE`,`UNIVERSAL BUILDING SQUARE FEET`,`UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE`,`BUILDING SQUARE FEET`,`BEDROOMS - ALL BUILDINGS`,`TOTAL BATHROOMS - ALL BUILDINGS`,`NUMBER OF BATHROOMS`,`FULL BATHS - ALL BUILDINGS`,`HALF BATHS - ALL BUILDINGS`,`TAX AMOUNT`,`TAX YEAR`,`ROOF TYPE CODE`,`FIPS CODE`,`CLIP`,`SITUS STATE`,`SALE DATE`)
+fullData=fullData |>select(`FIPS CODE`,`CLIP`,`DEED SITUS STATE - STATIC`,`DEED SITUS COUNTY - STATIC`,`SALE DERIVED DATE`,`PRIMARY CATEGORY CODE`)
+TaxDeedsData = left_join(taxData, fullData, by = c("CLIP", "FIPS CODE")) 
 TaxDeedsData=TaxDeedsData|>distinct(`CLIP`,.keep_all = TRUE)
 
 #TaxDeedsData = left_join(taxData, fullData, by = c("CLIP", "FIPS CODE"))
@@ -395,8 +400,8 @@ return(data)
 
 #tibbleCreator("FULL BATHS - ALL BUILDINGS","DEED SITUS COUNTY - STATIC",FALSE,TRUE,TRUE)
 #tibbleCreator("FULL BATHS - ALL BUILDINGS","DEED SITUS STATE - STATIC",FALSE,TRUE,TRUE)
-tibbleCreator("HALF BATHS - ALL BUILDINGS","DEED SITUS COUNTY - STATIC",FALSE,TRUE,TRUE)
-tibbleCreator("HALF BATHS - ALL BUILDINGS","DEED SITUS STATE - STATIC",FALSE,TRUE,TRUE)
+#tibbleCreator("HALF BATHS - ALL BUILDINGS","DEED SITUS COUNTY - STATIC",FALSE,TRUE,TRUE)
+#tibbleCreator("HALF BATHS - ALL BUILDINGS","DEED SITUS STATE - STATIC",FALSE,TRUE,TRUE)
 #DATa=tibbleCreator("SALE RECORDED DOCUMENT PAGE NUMBER","DEED SITUS COUNTY - STATIC",FALSE,TRUE)|>mutate(`% missing`=100-`% missing`)|> rename("% Complete"=`% missing`)
 #write_csv(DATa,"~/cl-validation/Output/SALE RECORDED DOCUMENT PAGE NUMBER")
 #print(tibbleCreator("SALE RECORDED DOCUMENT PAGE NUMBER","DEED SITUS STATE - STATIC",FALSE,FALSE))
@@ -651,6 +656,194 @@ dbDisconnect(con)
 
 ````
 
+````{R}
+
+TaxData=tbl(con,"tax")
+
+TaxData=TaxData|> 
+ filter( `SITUS STATE`%in% statenewabb) #|> mutate("ZIPCODE"=substr(`SITUS ZIP CODE`,1,5))|>filter(`ZIPCODE`=="92071") |>collect()
+TaxData=TaxData|> filter(`SITUS STATE`=="CA")|> filter(`SITUS CITY`=="SAN DIEGO") |>collect()
+print(TaxData)
+
+
+````
+
+
+
+
+
+````{R}
+
+con = dbConnect(duckdb("/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db",read_only = T))
+
+#Adds DC to state.abb and the goal of this is to not included territories
+statenewabb = c("DC", state.abb)
+
+TaxData=tbl(con,"tax")
+fullData=tbl(con,"deeds")
+
+#print(TaxData)
+#print(TaxData)
+#print(TaxData)
+#Takes the database connection and turns it into a tibble and filters out non states and DC and ones that do not exist
+#fullData = fullData |> 
+ #   filter(`DEED SITUS STATE - STATIC` %in% statenewabb) #|> filter(`DEED SITUS CITY - STATIC`=="SANTEE")|> filter(`DEED SITUS STATE - STATIC`=="CA")
+
+#taxData = taxData |> 
+  #filter(`SITUS STATE` %in% statenewabb)
+TaxData=TaxData|>select(`YEAR BUILT`,`ACRES`,`LAND SQUARE FOOTAGE`,`UNIVERSAL BUILDING SQUARE FEET`,`UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE`,`BUILDING SQUARE FEET`,`BEDROOMS - ALL BUILDINGS`,`TOTAL BATHROOMS - ALL BUILDINGS`,`NUMBER OF BATHROOMS`,`FULL BATHS - ALL BUILDINGS`,`HALF BATHS - ALL BUILDINGS`,`TAX AMOUNT`,`TAX YEAR`,`ROOF TYPE CODE`,`FIPS CODE`,`CLIP`,`SITUS STATE`,`SALE DATE`,`SITUS ZIP CODE`,`SITUS CITY`)
+fullData=fullData |>select(`FIPS CODE`,`CLIP`,`DEED SITUS STATE - STATIC`,`DEED SITUS COUNTY - STATIC`,`SALE DERIVED DATE`,`PRIMARY CATEGORY CODE`,`SALE AMOUNT`,`DEED SITUS ZIP CODE - STATIC`)
+TaxData=TaxData |>filter(`SITUS STATE`=="CA")|>filter(`SITUS CITY`=="SANTEE")
+TaxDeedsData = left_join(TaxData, fullData, by = c("CLIP", "FIPS CODE")) 
+
+#TaxDeedsData=TaxDeedsData|>distinct(`CLIP`,.keep_all = TRUE) |>mutate("YEAR"=substr(`SALE DERIVED DATE`,1,4)) #|>
+  #collect() #|>sample_frac(0.6)
+TaxDeedsData=TaxDeedsData|>mutate("YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>arrange(desc(`YEAR`))|>collect()
+TaxDeedsData=TaxDeedsData|> distinct(`CLIP`,.keep_all = TRUE)
+#=TaxDeedsData = TaxDeedsData |> mutate(`ACRES` = as.numeric(ACRES)) |>
+#  mutate(`NUMBER OF BATHROOMS` = as.numeric(`NUMBER OF BATHROOMS`)) |> mutate(`UNIVERSAL BUILDING SQUARE FEET`=as.numeric(`UNIVERSAL BUILDING SQUARE FEET`))|> mutate(`BEDROOMS - ALL BUILDINGS`=as.numeric(`BEDROOMS - ALL BUILDINGS`)) |>mutate(`YEAR BUILT`=as.numeric(`YEAR BUILT`)) |>mutate("YEAR"=as.numeric(`SALE DATE`)) 
+
+
+
+
+
+TaxDeedsData=TaxDeedsData|>filter(!is.na(`ACRES`)) |> filter(!is.na(`NUMBER OF BATHROOMS`)) |> filter(!is.na(`UNIVERSAL BUILDING SQUARE FEET`)) |> filter(!is.na(`BEDROOMS - ALL BUILDINGS`)) |>filter(!is.na(`YEAR BUILT`))|>filter(!is.na(`YEAR`))
+TaxDeedsData = TaxDeedsData |> mutate(`ACRES` = as.numeric(`ACRES`)) |>
+  mutate(`NUMBER OF BATHROOMS` = as.numeric(`NUMBER OF BATHROOMS`)) |> mutate(`UNIVERSAL BUILDING SQUARE FEET`=as.numeric(`UNIVERSAL BUILDING SQUARE FEET`))|> mutate(`BEDROOMS - ALL BUILDINGS`=as.numeric(`BEDROOMS - ALL BUILDINGS`)) |>mutate(`YEAR BUILT`=as.numeric(`YEAR BUILT`)) |>mutate("YEAR"=as.numeric(`SALE DATE`)) 
+Rows=nrow(TaxDeedsData)
+print(TaxDeedsData)
+
+Train=sample(seq_len(Rows), size = 0.6 * Rows)
+
+TrainData=TaxDeedsData[Train,]
+
+RemainingData=TaxDeedsData[-Train,]
+RemRows=nrow(RemainingData)
+
+Trial=sample(seq_len(RemRows), size = 0.5 * RemRows)
+TrialData=RemainingData[Trial,]
+SecondTrialData=RemainingData[-Trial,]
+print(TrainData)
+print(TrialData)
+print(SecondTrialData)
+
+#LinearModel=lm(`SALE AMOUNT`~`ACRES`+`NUMBER OF BATHROOMS`+`UNIVERSAL BUILDING SQUARE FEET`+`BEDROOMS - ALL BUILDINGS`+`YEAR BUILT`+`YEAR`,data=TrainData)
+
+#print(LinearModel)
+#190000.00
+RandomHouse=c(TrialData[1,c(2,9,4,7,1,27)])
+#print(RandomHouse)
+#print(predict(LinearModel,newdata=RandomHouse))
+
+#ggplot(TaxData,aes(x=log(as.numeric(`MARKET TOTAL VALUE`))))+geom_histogram() + labs(title = "Home Prices in Las Vegas,NV",x="Market Total Value")
+
+#ggplot(TaxData,aes(x=log(as.numeric(`ASSESSED TOTAL VALUE`))))+geom_histogram() + labs(title = "Home Prices in Las Vegas,NV",x="Assessed Total Value")
+dbDisconnect(con)
+````
+
+
+````{R}
+#installs libraries
+library(DBI)
+library(dbplyr)
+library(dplyr)
+library(duckdb)
+library(duckplyr)
+library(tidyr)
+library(tidyselect)
+library(tibble)
+library(RSQLite)
+library(stringr)
+library(rlang)
+library(styler) 
+library(sf)
+library(data.table)
+library(ggplot2)
+
+
+list=c("YEAR BUILT","ACRES","LAND SQUARE FOOTAGE","UNIVERSAL BUILDING SQUARE FEET","UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE","BUILDING SQUARE FEET","BEDROOMS - ALL BUILDINGS","TOTAL BATHROOMS - ALL BUILDINGS","NUMBER OF BATHROOMS","FULL BATHS - ALL BUILDINGS","HALF BATHS - ALL BUILDINGS","TAX AMOUNT","TAX YEAR","ROOF TYPE CODE")
+
+
+
+Lollipop2.0=function(list){
+#Creates a database connection to cl.db which is the unzipped db file with deeds as the table and is a db file
+con = dbConnect(duckdb("/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db",read_only = T))
+
+#Adds DC to state.abb and the goal of this is to not included territories
+statenewabb = c("DC", state.abb)
+
+#Takes the database connection and turns it into a tibble and filters out non states and DC and ones that do not exist
+fullData = tbl(con, "deeds")
+fullData = fullData |> 
+  filter(`DEED SITUS STATE - STATIC` %in% statenewabb)
+
+taxData=tbl(con,"tax")
+
+taxData = taxData |> 
+  filter(`SITUS STATE` %in% statenewabb)
+taxData=taxData|>select(`YEAR BUILT`,`ACRES`,`LAND SQUARE FOOTAGE`,`UNIVERSAL BUILDING SQUARE FEET`,`UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE`,`BUILDING SQUARE FEET`,`BEDROOMS - ALL BUILDINGS`,`TOTAL BATHROOMS - ALL BUILDINGS`,`NUMBER OF BATHROOMS`,`FULL BATHS - ALL BUILDINGS`,`HALF BATHS - ALL BUILDINGS`,`TAX AMOUNT`,`TAX YEAR`,`ROOF TYPE CODE`,`FIPS CODE`,`CLIP`,`SITUS STATE`,`SALE DATE`)
+fullData=fullData |>select(`FIPS CODE`,`CLIP`,`DEED SITUS STATE - STATIC`,`DEED SITUS COUNTY - STATIC`,`SALE DERIVED DATE`,`PRIMARY CATEGORY CODE`)
+TaxDeedsData = left_join(taxData, fullData, by = c("CLIP", "FIPS CODE")) 
+TaxDeedsData=TaxDeedsData|>distinct(`CLIP`,.keep_all = TRUE)
+  
+  
+ColumnNameList = list 
+
+missing = numeric(length(ColumnNameList))
+  nonmissing = numeric(length(ColumnNameList))
+MissingColumn=TaxDeedsData 
+PresentColumn=TaxDeedsData  |> filter(`PRIMARY CATEGORY CODE`=="A")
+MissingColumnValue=TaxDeedsData |> summarise(n=n())  |> pull(n)
+PresentColumnValue=TaxDeedsData |> filter(`PRIMARY CATEGORY CODE`=="A")  |> summarise(n=n())  |> pull(n)
+
+for(i in 1:length(ColumnNameList)){
+ValuePresentNonColumn= MissingColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> summarise(n=n())|> pull(n)
+ValuePresentColumn=PresentColumn |> filter(!is.na(.data[[ColumnNameList[i]]])) |> summarise(n=n())|> pull(n)
+
+ValueNonColumn=ValuePresentNonColumn/MissingColumnValue
+ValueColumn=ValuePresentColumn/PresentColumnValue  
+
+missing[i]=ValueNonColumn
+nonmissing[i]=ValueColumn  
+}
+
+
+
+LollipopData=data.frame(MissingSomething=missing, PresentColumn=nonmissing)
+row.names(LollipopData)=ColumnNameList
+
+
+ggplot(LollipopData) + 
+    geom_segment(aes(x = ColumnNameList, xend = ColumnNameList, y = MissingSomething, yend = PresentColumn), color = "grey") +
+    geom_point(aes(x = ColumnNameList, y = MissingSomething), color = rgb(0.7, 0.2, 0.1, 0.5), size = 3) +
+    geom_point(aes(x = ColumnNameList, y = PresentColumn), color = rgb(0.2, 0.7, 0.1, 0.5), size = 3) +
+    coord_flip() +
+    labs(
+      x = "Columns",
+      y = "% Complete",
+      title = paste("% Complete given Arms Length", "vs. All Types of Sales"),
+      subtitle = "All Types vs. Arms Length Sales across columns", caption = paste("RED=ALL TYPES", "GREEN=Present A ")) +
+    ylim(0, 1) +
+    theme_minimal() +
+    theme(
+      legend.position = "right",  # Adjust legend position as needed
+      plot.title = element_text(hjust = 0.5),  # Center the title
+     plot.subtitle = element_text(hjust = 0.5)  # Center the subtitle
+    )
+
+ggsave(filename="~/cl-validation/Output/LollipopTaxTrial.jpg",plot=last_plot())
+dbDisconnect(con)
+}
+
+
+
+ Lollipop2.0(list)
+````
+
+
+
+
+
 ## LollipopCreator() 
 
 #### This function creates a Lollipop graph so for the parameter column you give a column in the database which is the parameter column and then give the column number for which you want to start at and end is the column you want to end at. So the LollipopCreator() makes a lollipop graph comparing the missigness for the specific columns you chose given when the column paramter you gave is present and not present.I also added list parameter so you can add a list with specific values rather than having to choose a specific value. Also the type parameter adds a filter to the specific column parameter in order to have more specific lollipop graphs. More parameters added to give more specific lollipop graphs. 
@@ -736,7 +929,7 @@ PresentColumn=fullData |> filter(column==type)
 MissingColumnValue=fullData |> filter(column!=type||is.na(column)) |> group_by(`DEED SITUS STATE - STATIC`)  |> summarise(n=n()) |> arrange(desc(`DEED SITUS STATE - STATIC`)) |> pull(n)
 PresentColumnValue=fullData |> filter(column==type) |> group_by(`DEED SITUS STATE - STATIC`)  |> summarise(n=n()) |> arrange(desc(`DEED SITUS STATE - STATIC`)) |> pull(n)  
 }
-else if(!state & na){
+else if(!state & na&!graph){
 MissingColumn=fullData |> filter(column!=type||is.na(column)) 
 PresentColumn=fullData |> filter(column==type)
 MissingColumnValue=fullData |> filter(column!=type||is.na(column)) |> group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`)  |> summarise(n=n(), .groups = 'drop') |> arrange(desc(`DEED SITUS STATE - STATIC`),desc(`FIPS CODE`)) |> pull(n)
@@ -744,7 +937,7 @@ PresentColumnValue=fullData |> filter(column==type) |> group_by(`DEED SITUS STAT
   
   
 }
-else if(!state & !na) {
+else if(!state & !na&!graph) {
 MissingColumn=fullData |> filter(column!=type) 
 PresentColumn=fullData |> filter(column==type)
 MissingColumnValue=fullData |> filter(column!=type) |> group_by(`DEED SITUS STATE - STATIC`,`FIPS CODE`)  |> summarise("Non A"=n()) 
@@ -846,9 +1039,9 @@ Binder=allData
   
   
 else if(i==1 & filter!=""){
-  filter_col == sym(ColumnNameList[i])
-  ValuePresentNonColumn == MissingColumn %>% filter(!!filter_col != filter) %>% summarise(n=n()) %>% pull(n)
-  ValuePresentColumn == PresentColumn %>% filter(!!filter_col == filter) %>% summarise(n=n()) %>% pull(n)
+  filter_col = sym(ColumnNameList[i])
+  ValuePresentNonColumn = MissingColumn %>% filter(!!filter_col != filter) %>% summarise(n=n()) %>% pull(n)
+  ValuePresentColumn = PresentColumn %>% filter(!!filter_col == filter) %>% summarise(n=n()) %>% pull(n)
 
   ValueNonColumn = ValuePresentNonColumn / MissingColumnValue
   ValueColumn = ValuePresentColumn / PresentColumnValue  
@@ -885,23 +1078,25 @@ return(allData)
 
 if(graph){
  ggplot(LollipopData) + 
-    geom_segment(aes(x = ColumnNameList, xend = ColumnNameList, y = MissingSomething, yend = PresentColumn), color = "grey") +
-    geom_point(aes(x = ColumnNameList, y = MissingSomething), color = rgb(0.7, 0.2, 0.1, 0.5), size = 3) +
-    geom_point(aes(x = ColumnNameList, y = PresentColumn), color = rgb(0.2, 0.7, 0.1, 0.5), size = 3) +
+    geom_segment(aes(x = ColumnNameList, xend = ColumnNameList, y = MissingSomething*100, yend = PresentColumn*100), color = "grey") +
+    geom_point(aes(x = ColumnNameList, y = MissingSomething*100), color = rgb(0.7, 0.2, 0.1, 0.5), size = 3) +
+    geom_point(aes(x = ColumnNameList, y = PresentColumn*100), color = rgb(0.2, 0.7, 0.1, 0.5), size = 3) +
     coord_flip() +
     labs(
-      x = "Columns",
+      x = "",
       y = "% Complete",
-      title = paste("% Complete given ", column,type, "vs. no ", column,type),
-      subtitle = "No/Missing vs. Present values across columns", caption = paste("RED=No/Missing ",column,type, "GREEN=Present #",column,type, if(na){ "includes NA's"} else{ "excludes NA's"}) 
-    ) +
-    ylim(0, 1) +
+      title = "% Complete of Variables by \nTransaction Type",caption= "Transactions are split between Arm's Length and \nNon Arm's Length",
+      subtitle = "Green = Buyer & Seller Independence")  +
+    ylim(0, 100) +
     theme_minimal() +
     theme(
       legend.position = "right",  # Adjust legend position as needed
       plot.title = element_text(hjust = 0.5),  # Center the title
      plot.subtitle = element_text(hjust = 0.5)  # Center the subtitle
-    )}}
+    )
+  ggsave("~/cl-validation/Output/NewLollipop.pdf",last_plot(),dpi = 300,width = 6,height=4.5)
+  
+  }}
 
 #LollipopCreator("SALE AMOUNT",16,23,"","")
 #TryList=c("SALE AMOUNT","DEED SITUS ZIP CODE - STATIC","DEED SITUS CITY - STATIC")
@@ -915,13 +1110,14 @@ if(graph){
 
 #LollipopCreator("PRIMARY CATEGORY CODE",2,2,"","A","",FALSE,FALSE)
 #LollipopCreator("PRIMARY CATEGORY CODE",2,2,"","A","",TRUE,FALSE)
-#ArmsLengthFull=LollipopCreator("PRIMARY CATEGORY CODE",1,103,"","A","",FALSE,FALSE)
+ArmsLengthFull=LollipopCreator("PRIMARY CATEGORY CODE",45,51,"","A","",TRUE,TRUE,FALSE)
+print(ArmsLengthFull)
 #print(ArmsLengthFull)
 #write.csv(ArmsLengthFull,"~/cl-validation/Output/ArmsLengthFull.csv")
-ArmsLengthFipsData=LollipopCreator("PRIMARY CATEGORY CODE",47,49,"","A","",FALSE,FALSE,FALSE)
+#ArmsLengthFipsData=LollipopCreator("PRIMARY CATEGORY CODE",47,49,"","A","",FALSE,FALSE,FALSE)
 #print(ArmsLengthData)
 #write.csv(ArmsLengthData,"~/cl-validation/Output/ArmsLengthData.csv")
-write.csv(ArmsLengthFipsData,"~/cl-validation/Output/ArmsLengthFipsData47-49.csv")
+#write.csv(ArmsLengthFipsData,"~/cl-validation/Output/ArmsLengthFipsData47-49.csv")
 #disconnects in order to avoid garbage collecting 
 dbDisconnect(con)
 ````
@@ -1103,9 +1299,10 @@ scale_fill_distiller(palette = "RdYlGn", direction = 1) +
 
 
 #PlotMaker(FALSE,"SALE RECORDED DOCUMENT PAGE NUMBER",TRUE)
-#PlotMaker(FALSE,"SALE RECORDED DOCUMENT NUMBER",TRUE)
-#PlotMaker(TRUE,"SALE RECORDED DOCUMENT PAGE NUMBER",TRUE)
-PlotMaker(TRUE,"SALE RECORDED DOCUMENT NUMBER",TRUE,"CA")
+PlotMaker(FALSE,"SALE RECORDED DOCUMENT NUMBER",TRUE,"")
+PlotMaker(FALSE,"SALE RECORDED DOCUMENT PAGE NUMBER",TRUE,"")
+
+#PlotMaker(TRUE,"SALE RECORDED DOCUMENT NUMBER",TRUE,"CA")
 ````
 
 
@@ -1277,7 +1474,7 @@ scale_fill_distiller(palette = "RdYlGn", direction = 1) +
 Data=read_csv("~/cl-validation/Output/ArmsLengthFipsData47-49.csv")  
 data=Data |> filter(`Column`=="SALE RECORDED DOCUMENT NUMBER")
 dAta=Data |> filter(`Column`=="SALE RECORDED DOCUMENT PAGE NUMBER")
-counties= counties(state="NJ",cb = TRUE) |> shift_geometry()  
+counties= counties(cb = TRUE) |> shift_geometry()  
 
 join_data <- left_join(
   data, 
@@ -1304,7 +1501,7 @@ join_data <- left_join(
 ) 
 
 join_data=join_data|>filter(!is.na(NAME))
-print(join_data)
+#print(join_data)
 ggplot() +
   geom_sf(data = join_data, aes(fill = Binary, geometry = geometry)) +
 scale_fill_distiller(palette = "RdYlGn", direction = 1) +
@@ -1327,13 +1524,16 @@ Tib_data <- left_join(
 )
 Tib_data=Tib_data|>filter(!is.na(NAME))
 
+countiesall <- counties(cb = TRUE, year = 2022) |> filter(STUSPS %in% statenewabb) %>%
+  shift_geometry()
 
-ggplot() +
+ggplot() +  geom_sf(data = countiesall)+
   geom_sf(data = Tib_data, aes(fill = X..Complete, geometry = geometry)) +
 scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   theme_minimal() +
-  labs(title= "SALE RECORDED DOCUMENT NUMBER % Complete")+ 
+  labs(title= "Sale Recorded Document Number % Complete",fill="% Complete")+ 
   theme_void()
+ggsave("~/cl-validation/Output/norm.pdf",last_plot(),dpi = 300, width = 6 ,height =3)
 
 TibP_data <- left_join(
   TibbleCreatorDataPage, 
@@ -1348,8 +1548,9 @@ ggplot() +
   geom_sf(data = TibP_data, aes(fill = X..Complete, geometry = geometry)) +
 scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   theme_minimal() +
-  labs(title= "SALE RECORDED DOCUMENT PAGE NUMBER % Complete")+ 
+  labs(title= "Sale Recorded Document Page Number % Complete",fill="% Complete")+ 
   theme_void()
+
 
 TibB_data <- left_join(
   TibbleCreatorDataBook, 
@@ -1359,13 +1560,17 @@ TibB_data <- left_join(
 )
 TibB_data=TibB_data|>filter(!is.na(NAME))
 
+countiesall <- counties(cb = TRUE, year = 2022) |> filter(STUSPS %in% statenewabb) %>%
+  shift_geometry()
 
-ggplot() +
+ggplot() + 
+  geom_sf(data = countiesall)+
   geom_sf(data = TibB_data, aes(fill = X..Complete, geometry = geometry)) +
 scale_fill_distiller(palette = "RdYlGn", direction = 1) +
   theme_minimal() +
-  labs(title= "SALE RECORDED DOCUMENT BOOK NUMBER % Complete")+ 
+  labs(title= "Sale Recorded Document Book Number % Complete",fill="% Complete")+ 
   theme_void()
+ggsave("~/cl-validation/Output/Book.pdf",last_plot(),dpi = 300, width = 6 ,height = 3)
 ````
 
 
