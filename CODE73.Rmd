@@ -675,10 +675,9 @@ print(TaxData)
 ````{R}
 
 con = dbConnect(duckdb("/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db",read_only = T))
-
+set.seed(123)
 #Adds DC to state.abb and the goal of this is to not included territories
 statenewabb = c("DC", state.abb)
-
 TaxData=tbl(con,"tax")
 fullData=tbl(con,"deeds")
 
@@ -691,15 +690,23 @@ fullData=tbl(con,"deeds")
 
 #taxData = taxData |> 
   #filter(`SITUS STATE` %in% statenewabb)
-TaxData=TaxData|>select(`YEAR BUILT`,`ACRES`,`LAND SQUARE FOOTAGE`,`UNIVERSAL BUILDING SQUARE FEET`,`UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE`,`BUILDING SQUARE FEET`,`BEDROOMS - ALL BUILDINGS`,`TOTAL BATHROOMS - ALL BUILDINGS`,`NUMBER OF BATHROOMS`,`FULL BATHS - ALL BUILDINGS`,`HALF BATHS - ALL BUILDINGS`,`TAX AMOUNT`,`TAX YEAR`,`ROOF TYPE CODE`,`FIPS CODE`,`CLIP`,`SITUS STATE`,`SALE DATE`,`SITUS ZIP CODE`,`SITUS CITY`)
-fullData=fullData |>select(`FIPS CODE`,`CLIP`,`DEED SITUS STATE - STATIC`,`DEED SITUS COUNTY - STATIC`,`SALE DERIVED DATE`,`PRIMARY CATEGORY CODE`,`SALE AMOUNT`,`DEED SITUS ZIP CODE - STATIC`)
-TaxData=TaxData |>filter(`SITUS STATE`=="CA")|>filter(`SITUS CITY`=="SANTEE")
+TaxData=TaxData|>select(`YEAR BUILT`,`ACRES`,`LAND SQUARE FOOTAGE`,`UNIVERSAL BUILDING SQUARE FEET`,`UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE`,`BUILDING SQUARE FEET`,`BEDROOMS - ALL BUILDINGS`,`TOTAL BATHROOMS - ALL BUILDINGS`,`NUMBER OF BATHROOMS`,`FULL BATHS - ALL BUILDINGS`,`HALF BATHS - ALL BUILDINGS`,`TAX AMOUNT`,`TAX YEAR`,`ROOF TYPE CODE`,`FIPS CODE`,`CLIP`,`SITUS STATE`,`SALE DATE`,`SITUS ZIP CODE`,`SITUS CITY`,`LIVING SQUARE FEET - ALL BUILDINGS`,`COUNTY USE DESCRIPTION`,`CENSUS ID`,`SITUS STREET NAME`,`SITUS HOUSE NUMBER`,`APN (PARCEL NUMBER UNFORMATTED)`)
+fullData=fullData|> filter(`DEED CATEGORY TYPE CODE`!="U")
+fullData=fullData |>select(`FIPS CODE`,`CLIP`,`DEED SITUS STATE - STATIC`,`DEED SITUS COUNTY - STATIC`,`SALE DERIVED DATE`,`PRIMARY CATEGORY CODE`,`SALE AMOUNT`,`DEED SITUS ZIP CODE - STATIC`,`DEED CATEGORY TYPE CODE`)
+TaxData=TaxData |>filter(`SITUS STATE`=="CA") |> filter(`SITUS CITY`=="SANTEE")
 TaxDeedsData = left_join(TaxData, fullData, by = c("CLIP", "FIPS CODE")) 
 
 #TaxDeedsData=TaxDeedsData|>distinct(`CLIP`,.keep_all = TRUE) |>mutate("YEAR"=substr(`SALE DERIVED DATE`,1,4)) #|>
   #collect() #|>sample_frac(0.6)
-TaxDeedsData=TaxDeedsData|>mutate("YEAR"=substr(`SALE DERIVED DATE`,1,4)) |>arrange(desc(`YEAR`))|>collect()
+TaxDeedsData=TaxDeedsData|>mutate("YEAR"=substr(`SALE DERIVED DATE`,1,4))|> mutate("CENSUS TRACT"=substr(`CENSUS ID`,1,6))
+TaxDeedsData = TaxDeedsData |> mutate(`ACRES` = as.numeric(`ACRES`)) |>
+  mutate(`NUMBER OF BATHROOMS` = as.numeric(`NUMBER OF BATHROOMS`)) |> mutate(`UNIVERSAL BUILDING SQUARE FEET`=as.numeric(`UNIVERSAL BUILDING SQUARE FEET`))|> mutate(`BEDROOMS - ALL BUILDINGS`=as.numeric(`BEDROOMS - ALL BUILDINGS`)) |>mutate(`YEAR BUILT`=as.numeric(`YEAR BUILT`)) |>mutate(`YEAR`=as.numeric(`YEAR`)) |>mutate(`SALE AMOUNT`=as.numeric(`SALE AMOUNT`)) |>mutate(`LIVING SQUARE FEET - ALL BUILDINGS`=as.numeric(`LIVING SQUARE FEET - ALL BUILDINGS`)) 
+TaxDeedsData=TaxDeedsData |> filter(!is.na(`NUMBER OF BATHROOMS`)) |> filter(!is.na(`UNIVERSAL BUILDING SQUARE FEET`)) |> filter(!is.na(`BEDROOMS - ALL BUILDINGS`)) |>filter(!is.na(`YEAR BUILT`))|>filter(!is.na(`YEAR`)) |>filter(!is.na(`SALE AMOUNT`)) |>filter(!is.na(`LIVING SQUARE FEET - ALL BUILDINGS`))|>filter(!is.na(`ROOF TYPE CODE`))|>filter(!is.na(`COUNTY USE DESCRIPTION`)) |>filter(!is.na(`UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE`)) |>filter(!is.na(`CENSUS TRACT`))
+TaxDeedsData=TaxDeedsData|>arrange(desc(`CLIP`),desc(`SALE DERIVED DATE`)) |>collect()
+
+
 TaxDeedsData=TaxDeedsData|> distinct(`CLIP`,.keep_all = TRUE)
+
 #=TaxDeedsData = TaxDeedsData |> mutate(`ACRES` = as.numeric(ACRES)) |>
 #  mutate(`NUMBER OF BATHROOMS` = as.numeric(`NUMBER OF BATHROOMS`)) |> mutate(`UNIVERSAL BUILDING SQUARE FEET`=as.numeric(`UNIVERSAL BUILDING SQUARE FEET`))|> mutate(`BEDROOMS - ALL BUILDINGS`=as.numeric(`BEDROOMS - ALL BUILDINGS`)) |>mutate(`YEAR BUILT`=as.numeric(`YEAR BUILT`)) |>mutate("YEAR"=as.numeric(`SALE DATE`)) 
 
@@ -707,37 +714,72 @@ TaxDeedsData=TaxDeedsData|> distinct(`CLIP`,.keep_all = TRUE)
 
 
 
-TaxDeedsData=TaxDeedsData|>filter(!is.na(`ACRES`)) |> filter(!is.na(`NUMBER OF BATHROOMS`)) |> filter(!is.na(`UNIVERSAL BUILDING SQUARE FEET`)) |> filter(!is.na(`BEDROOMS - ALL BUILDINGS`)) |>filter(!is.na(`YEAR BUILT`))|>filter(!is.na(`YEAR`))
-TaxDeedsData = TaxDeedsData |> mutate(`ACRES` = as.numeric(`ACRES`)) |>
-  mutate(`NUMBER OF BATHROOMS` = as.numeric(`NUMBER OF BATHROOMS`)) |> mutate(`UNIVERSAL BUILDING SQUARE FEET`=as.numeric(`UNIVERSAL BUILDING SQUARE FEET`))|> mutate(`BEDROOMS - ALL BUILDINGS`=as.numeric(`BEDROOMS - ALL BUILDINGS`)) |>mutate(`YEAR BUILT`=as.numeric(`YEAR BUILT`)) |>mutate("YEAR"=as.numeric(`SALE DATE`)) 
+
+
+
+
 Rows=nrow(TaxDeedsData)
-print(TaxDeedsData)
+
 
 Train=sample(seq_len(Rows), size = 0.6 * Rows)
 
 TrainData=TaxDeedsData[Train,]
+TrainData=TrainData|>arrange(desc(`YEAR BUILT`),desc(`ACRES`))
+
+#indices_to_exclude <- c(11, 44, 143,57,17,254,224,260,42,137)
+
+# Exclude specific rows
+#TrainData <-TrainData %>% filter(!(row_number() %in% indices_to_exclude))
+
 
 RemainingData=TaxDeedsData[-Train,]
 RemRows=nrow(RemainingData)
 
 Trial=sample(seq_len(RemRows), size = 0.5 * RemRows)
 TrialData=RemainingData[Trial,]
+TrialData=TrialData|>arrange(desc(`YEAR BUILT`),desc(`ACRES`))
 SecondTrialData=RemainingData[-Trial,]
-print(TrainData)
-print(TrialData)
-print(SecondTrialData)
+SecondTrialData=SecondTrialData|>arrange(desc(`YEAR BUILT`),desc(`ACRES`))
 
-#LinearModel=lm(`SALE AMOUNT`~`ACRES`+`NUMBER OF BATHROOMS`+`UNIVERSAL BUILDING SQUARE FEET`+`BEDROOMS - ALL BUILDINGS`+`YEAR BUILT`+`YEAR`,data=TrainData)
 
+#print(TrialData)
+
+#`UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE` normally would effect but here they are L's
+
+LinearModel=lm(`SALE AMOUNT`~`NUMBER OF BATHROOMS`+`BEDROOMS - ALL BUILDINGS`+`YEAR BUILT`+`YEAR`+I((`YEAR`)^2)+`LIVING SQUARE FEET - ALL BUILDINGS`+`COUNTY USE DESCRIPTION`+`CENSUS TRACT`,data=TrainData)
+#LinearMode=lm(`SALE AMOUNT`~`LIVING SQUARE FEET - ALL BUILDINGS`,data=TrainData)
 #print(LinearModel)
-#190000.00
-RandomHouse=c(TrialData[1,c(2,9,4,7,1,27)])
+
+#RandomHouse=c(TrialData[c(nrow(TrialData)),c(1-35)])
 #print(RandomHouse)
-#print(predict(LinearModel,newdata=RandomHouse))
+
+#plot(LinearModel)
+Predicted=predict(LinearModel,newdata=TrialData)
+Actual=TrialData[,"SALE AMOUNT"]|>pull()
+plot(Actual,Predicted)
+
+
+#plot(`SALE AMOUNT`~`LIVING SQUARE FEET - ALL BUILDINGS`,data=TrainData) 
+#abline(LinearMode, col = "blue") 
 
 #ggplot(TaxData,aes(x=log(as.numeric(`MARKET TOTAL VALUE`))))+geom_histogram() + labs(title = "Home Prices in Las Vegas,NV",x="Market Total Value")
 
 #ggplot(TaxData,aes(x=log(as.numeric(`ASSESSED TOTAL VALUE`))))+geom_histogram() + labs(title = "Home Prices in Las Vegas,NV",x="Assessed Total Value")
+dbDisconnect(con)
+````
+````{R}
+
+con = dbConnect(duckdb("/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db",read_only = T))
+TaxData=tbl(con,"tax")
+FullData=tbl(con,"deeds")
+#SanteeData=TaxData|>filter(`SITUS STATE`=="CA")|>filter(`SITUS CITY`=="SANTEE") 
+#ElCajonData=TaxData|>filter(`SITUS STATE`=="CA")|>filter(`SITUS CITY`=="EL CAJON") |> mutate("Tract"=substr(`CENSUS ID`,1,),.before = 1)
+FullData=FullData |> filter(`APN (PARCEL NUMBER UNFORMATTED)`=="33791932800200"&`DEED SITUS CITY - STATIC`=="CASPER")
+
+print(TaxData)
+#print(SanteeData)
+#print(ElCajonData)
+
 dbDisconnect(con)
 ````
 
