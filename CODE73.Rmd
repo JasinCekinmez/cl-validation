@@ -801,10 +801,6 @@ slurm_apply(f=Slurmmaker,params=params,jobname = "CUYAHOGA",nodes = 19,
 
 
 ````
-
-
-
-
 ````{R}
 
 con <- dbConnect(duckdb::duckdb(), "/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db", read_only = TRUE)
@@ -824,7 +820,7 @@ fullData <- fullData %>%
   filter(`DEED CATEGORY TYPE CODE` != "U") %>%
   select(`FIPS CODE`, `CLIP`, `DEED SITUS STATE - STATIC`, `DEED SITUS COUNTY - STATIC`, `SALE DERIVED DATE`, `PRIMARY CATEGORY CODE`, `SALE AMOUNT`, `DEED SITUS ZIP CODE - STATIC`, `DEED CATEGORY TYPE CODE`,`DEED SITUS CITY - STATIC`)
 
-fullData = fullData |> filter(`DEED SITUS STATE - STATIC`=="UT")  
+fullData = fullData |> filter(`DEED SITUS STATE - STATIC`=="WY")  |>filter(`DEED SITUS COUNTY - STATIC`=="SWEETWATER")
 
 
 TaxDeedsData <- left_join(fullData, TaxData, by = c("CLIP", "FIPS CODE")) |>
@@ -836,7 +832,7 @@ TaxDeedsData <- left_join(fullData, TaxData, by = c("CLIP", "FIPS CODE")) |>
         `YEAR` = as.numeric(`YEAR`),
         `SALE AMOUNT` = as.numeric(`SALE AMOUNT`),
         `LIVING SQUARE FEET - ALL BUILDINGS` = as.numeric(`LIVING SQUARE FEET - ALL BUILDINGS`)) 
-print(TaxDeedsData)
+
 
 TaxDeedsData=TaxDeedsData|> filter(!is.na(`TOTAL BATHROOMS - ALL BUILDINGS`),
          !is.na(`BEDROOMS - ALL BUILDINGS`),
@@ -890,8 +886,19 @@ TrialData=TrialData|>filter(!(`FEDERAL TRACT` %in% missing_tracts))
 LinearModel <- lm(`SALE AMOUNT` ~ `TOTAL BATHROOMS - ALL BUILDINGS` + `BEDROOMS - ALL BUILDINGS` + `YEAR BUILT` + `YEAR` + I((`YEAR`)^2) + `LIVING SQUARE FEET - ALL BUILDINGS` + `FEDERAL TRACT` + `PROPERTY INDICATOR CODE`, data = TrainData)
 
 # Predictions
+PredictedTemp <- predict(LinearModel, newdata = TrialData)
+ActualTemp <- TrialData[,"SALE AMOUNT"] %>% pull()
+
+Residuals=ActualTemp-PredictedTemp
+zScores = scale(Residuals)
+Outliers = which(abs(zScores) > 3)
+
+TrialData = TrialData[-Outliers, ]
+
 Predicted <- predict(LinearModel, newdata = TrialData)
 Actual <- TrialData[,"SALE AMOUNT"] %>% pull()
+
+
 
 # Plot
 plot_data <- data.frame(Actual = Actual, Predicted = Predicted)
@@ -907,6 +914,8 @@ ggplot(plot_data, aes(x = Actual, y = Predicted)) +
  scale_color_manual(values = c("y = x line" = "red", "Line of Best Fit" = "blue")) +
   theme_minimal() +
   theme(legend.position = "bottom")
+
+
 # Disconnect the database
 dbDisconnect(con)
 
@@ -916,8 +925,144 @@ dbDisconnect(con)
 
 
 
-
 ```
+
+
+
+
+````{R}
+Slurmmake=function(STATE){
+
+
+con <- dbConnect(duckdb::duckdb(), "/projects/SHARKEY/corelogic_pu/CorelogicDeeds/2023Update/cl.db", read_only = TRUE)
+set.seed(123)
+
+# Adds DC to state.abb and the goal of this is to not include territories
+statenewabb <- c("DC", state.abb)
+
+TaxData <- tbl(con, "tax")
+fullData <- tbl(con, "deeds")
+
+# Select relevant columns and filter data
+TaxData <- TaxData %>%
+  select(`YEAR BUILT`, `ACRES`, `LAND SQUARE FOOTAGE`, `UNIVERSAL BUILDING SQUARE FEET`, `UNIVERSAL BUILDING SQUARE FEET SOURCE INDICATOR CODE`, `BUILDING SQUARE FEET`, `BEDROOMS - ALL BUILDINGS`, `TOTAL BATHROOMS - ALL BUILDINGS`, `NUMBER OF BATHROOMS`, `FULL BATHS - ALL BUILDINGS`, `HALF BATHS - ALL BUILDINGS`, `TAX AMOUNT`, `TAX YEAR`, `ROOF TYPE CODE`, `FIPS CODE`, `CLIP`, `SITUS STATE`, `SALE DATE`, `SITUS ZIP CODE`, `SITUS CITY`, `LIVING SQUARE FEET - ALL BUILDINGS`, `PROPERTY INDICATOR CODE`, `CENSUS ID`, `SITUS STREET NAME`, `SITUS HOUSE NUMBER`, `APN (PARCEL NUMBER UNFORMATTED)`, `SITUS COUNTY`)
+
+fullData <- fullData %>%
+  filter(`DEED CATEGORY TYPE CODE` != "U") %>%
+  select(`FIPS CODE`, `CLIP`, `DEED SITUS STATE - STATIC`, `DEED SITUS COUNTY - STATIC`, `SALE DERIVED DATE`, `PRIMARY CATEGORY CODE`, `SALE AMOUNT`, `DEED SITUS ZIP CODE - STATIC`, `DEED CATEGORY TYPE CODE`,`DEED SITUS CITY - STATIC`)
+
+fullData = fullData |> filter(`DEED SITUS STATE - STATIC`==STATE) 
+
+
+TaxDeedsData <- left_join(fullData, TaxData, by = c("CLIP", "FIPS CODE")) |>
+  mutate("YEAR" = substr(`SALE DERIVED DATE`, 1, 4)) %>%
+  mutate("FEDERAL TRACT"=paste0(`FIPS CODE`,substr(`CENSUS ID`,1,6)),.before = 1) %>%
+  mutate(`TOTAL BATHROOMS - ALL BUILDINGS` = as.numeric(`TOTAL BATHROOMS - ALL BUILDINGS`),
+         `BEDROOMS - ALL BUILDINGS` = as.numeric(`BEDROOMS - ALL BUILDINGS`),
+         `YEAR BUILT` = as.numeric(`YEAR BUILT`),
+        `YEAR` = as.numeric(`YEAR`),
+        `SALE AMOUNT` = as.numeric(`SALE AMOUNT`),
+        `LIVING SQUARE FEET - ALL BUILDINGS` = as.numeric(`LIVING SQUARE FEET - ALL BUILDINGS`)) 
+
+
+TaxDeedsData=TaxDeedsData|> filter(!is.na(`TOTAL BATHROOMS - ALL BUILDINGS`),
+         !is.na(`BEDROOMS - ALL BUILDINGS`),
+         !is.na(`YEAR BUILT`),
+        !is.na(`YEAR`),
+         !is.na(`SALE AMOUNT`),
+         !is.na(`LIVING SQUARE FEET - ALL BUILDINGS`),
+         !is.na(`PROPERTY INDICATOR CODE`),
+         !is.na(`FEDERAL TRACT`)) %>%
+  arrange(desc(`CLIP`), desc(`SALE DERIVED DATE`)) %>% collect()
+
+TaxDeedsData <- TaxDeedsData %>%
+  mutate(`FEDERAL TRACT` = as.factor(`FEDERAL TRACT`)) %>%
+  mutate(`PROPERTY INDICATOR CODE` = as.factor(`PROPERTY INDICATOR CODE`)) |>
+  distinct(`CLIP`, .keep_all = TRUE)
+
+
+Rows=nrow(TaxDeedsData)
+
+
+Train=sample(seq_len(Rows), size = 0.6 * Rows)
+
+TrainData=TaxDeedsData[Train,]
+TrainData=TrainData|>arrange(desc(`YEAR BUILT`),desc(`ACRES`))
+
+#indices_to_exclude <- c(11, 44, 143,57,17,254,224,260,42,137)
+
+# Exclude specific rows
+#TrainData <-TrainData %>% filter(!(row_number() %in% indices_to_exclude))
+
+
+RemainingData=TaxDeedsData[-Train,]
+RemRows=nrow(RemainingData)
+
+Trial=sample(seq_len(RemRows), size = 0.5 * RemRows)
+TrialData=RemainingData[Trial,]
+TrialData=TrialData|>arrange(desc(`YEAR BUILT`),desc(`ACRES`))
+SecondTrialData=RemainingData[-Trial,]
+SecondTrialData=SecondTrialData|>arrange(desc(`YEAR BUILT`),desc(`ACRES`))
+
+
+
+missing_PIC <- setdiff(TrialData$`PROPERTY INDICATOR CODE`, TrainData$`PROPERTY INDICATOR CODE`)
+TrialData=TrialData|>filter(!(`PROPERTY INDICATOR CODE` %in% missing_PIC))
+
+missing_tracts <- setdiff(TrialData$`FEDERAL TRACT`, TrainData$`FEDERAL TRACT`)
+TrialData=TrialData|>filter(!(`FEDERAL TRACT` %in% missing_tracts))
+
+
+
+LinearModel <- lm(`SALE AMOUNT` ~ `TOTAL BATHROOMS - ALL BUILDINGS` + `BEDROOMS - ALL BUILDINGS` + `YEAR BUILT` + `YEAR` + I((`YEAR`)^2) + `LIVING SQUARE FEET - ALL BUILDINGS` + `FEDERAL TRACT` + `PROPERTY INDICATOR CODE`, data = TrainData)
+
+# Predictions
+PredictedTemp <- predict(LinearModel, newdata = TrialData)
+ActualTemp <- TrialData[,"SALE AMOUNT"] %>% pull()
+
+Residuals=ActualTemp-PredictedTemp
+zScores = scale(Residuals)
+Outliers = which(abs(zScores) > 3)
+
+TrialData = TrialData[-Outliers, ]
+
+Predicted <- predict(LinearModel, newdata = TrialData)
+Actual <- TrialData[,"SALE AMOUNT"] %>% pull()
+
+
+
+# Plot
+plot_data <- data.frame(Actual = Actual, Predicted = Predicted)
+
+ggplot(plot_data, aes(x = Actual, y = Predicted)) +
+  geom_point() +
+  geom_abline(aes(color = "y = x line"), intercept = 0, slope = 1, linetype = "dashed",color="red") +
+  geom_smooth(aes(color = "Line of Best Fit"), method = "lm") +
+  labs(title = "Actual vs. Predicted Sale Amount",
+       x = "Actual Sale Amount",
+      y = "Predicted Sale Amount",
+       color = "Legend") +
+ scale_color_manual(values = c("y = x line" = "red", "Line of Best Fit" = "blue")) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+ggsave("~/cl-validation/Output/UTAHNOOUTLIERS.jpg",plot = last_plot())
+# Disconnect the database
+dbDisconnect(con)
+}
+
+params=tibble(STATE="UT")
+slurm_apply(f=Slurmmake,params=params,jobname = "UT",nodes = 19,
+              cpus_per_node = 1,
+              slurm_options = list(time = '1:05:00',
+                                   'mem-per-cpu' = '99G',
+                                   'mail-type' = list('begin', 'end', 'fail'),
+                                   'mail-user' = 'jc9154@princeton.edu'))
+
+
+
+
+````
 
 
 
