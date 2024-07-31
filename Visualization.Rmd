@@ -1,7 +1,7 @@
 ---
 title: "REMATCH+ Project Visualization"
 author: "Jasin Cekinmez"
-date: "2024-06-27"
+date: "2024-08-01"
 output: html_document
 ---
 
@@ -181,47 +181,21 @@ joinData= joinData |>
   filter(Value!="NA")
 
 #More joining 
-Salecsv=left_join(Salecsv,fips_codes,by= c("DEED.SITUS.STATE...STATIC" = "state"),keep = TRUE)
-Salecsv=Salecsv |>
-  distinct(FIPS.CODE,state,.keep_all = TRUE)
+#Salecsv=left_join(Salecsv,fips_codes,by= c("DEED.SITUS.STATE...STATIC" = "state"),keep = TRUE)
+#Salecsv=Salecsv |>
+#  distinct(FIPS.CODE,state,.keep_all = TRUE)
 
 #Filtering
 RealJoinData=left_join(Salecsv,RUCcodes1990,by= c("FIPS.CODE" = "FIPS"),keep = TRUE)
-RealJoinData= RealJoinData |>
-  mutate(B=substr(FIPS.CODE,1,2)==state_code)
 
-RealJoinData= RealJoinData |> 
-  filter(B==TRUE)
-
-RealJoinData= RealJoinData |> 
-  select(-(state:state_code))
-
-RealJoinData= RealJoinData |>
-  select(-(FIPS:B))
-
-RealJoinData= RealJoinData |> 
-  mutate("Complete %"=(100-X..missing))
-
-RealJoinData=RealJoinData |>
-  rename("Metro Status"=`County metropolitan status, 1993 (1=metro,0=nonmetro)`)
-
-RealJoinData= RealJoinData |> 
-  filter(`Metro Status`!="NA")
-
-RealJoinData=RealJoinData |>
-  select(-(...1))
-
-RealJoinData=RealJoinData |>
-  mutate("Metro Status"=as.character(`Metro Status`))
-
-#Plot of Fips Code RUC 1993
-ggplot(RealJoinData, aes(x=`Complete %`,fill = `Metro Status`)) + labs(title="1993 RUC Codes All Sales", subtitle="1=Metro, 0=Rural") +geom_density(alpha = 0.5)  
 
 #Plot of Fips Code RUC 2023
 jointData = jointData |> 
   select(-(...1)) |>
   mutate("Complete %"=(100-X..missing))
-ggplot(jointData, aes(x=`Complete %`,fill = `Value`)) + labs(title="2023 RUC Codes All Sales",subtitle = "1= Most Metro, 9= Most Rural") +geom_density(alpha = 0.5)
+ggplot(jointData, aes(x=`Complete %`,fill = `Value`)) + labs(title="% Complete of House Sale Prices County Data by \nPopulation Concentration",subtitle = "1= Most Metro, 9= Most Rural",caption = "Source: 2023 Rural-Urban Continuum Codes",x="% Complete",y="Density", fill="RUC Code") +geom_density(alpha = 0.5)+
+  theme_minimal()
+ggsave("~/cl-validation/Output/RUCA.jpg",plot = last_plot(),dpi = 300, width = 6 ,height = 3)
 
 ## Turns 1-3=1 and 4-9=0
 jointData = jointData |> mutate("Value"=as.numeric(`Value`)) |> mutate(Value= case_when(
