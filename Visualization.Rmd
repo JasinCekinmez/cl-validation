@@ -1,0 +1,257 @@
+---
+title: "REMATCH+ Project Visualization"
+author: "Jasin Cekinmez"
+date: "2024-08-01"
+output: html_document
+---
+
+### Installs Libraries 
+````{R}
+#installs libraries
+library(DBI)
+library(dbplyr)
+library(dplyr)
+library(duckdb)
+library(duckplyr)
+library(tidyr)
+library(tidyselect)
+library(tibble)
+library(RSQLite)
+library(stringr)
+library(rlang)
+library(styler) 
+library(ggplot2)
+library(readr)
+library(forcats)
+library(tidycensus)
+library(maps)
+library(ggplot2)
+library(usmap)
+library(tigris)
+library(viridis)
+library(patchwork)
+library(mapview) 
+library(purrr)
+````
+
+
+
+
+### %Missingness plots for each state for various columns 
+````{R}
+
+#data=read_csv("~/cl-validation/Output/ACTUAL YEAR BUILT - STATICDEED SITUS STATE - STATIC.csv")
+fileList=numeric(14)
+fileList=c("Actual Year Built.csv", "BUYER OCCUPANCY CODE.csv", "CLIP.csv", "DEED CATEGORY TYPE.csv", "SALE DOCUMENT TYPE  CODE.csv", "FIPS Code.csv", "PRIMARY CATEGORY CODE.csv", "PROPERTY INDICATOR CODE.csv", "SALE AMOUNT.csv", "SALE DERIVED DATE.csv", "SALE DERIVED RECORDING DATE.csv", "City.csv", "Zip Code.csv", "EFFECTIVE YEAR BUILT.csv")
+
+nameList=c("Actual Year Built", "Buyer Occupancy Code", "CLIP", "Deed Category Type", "Sale Document Type Code", "FIPS Code", "Primary Category Code", "Property Indicator Code", "Sale Amount", "Sale Derived Date", "Sale Derived Recording Date", "City", "Zip Code", "Effective Year Built")
+
+
+
+
+for(i in 1:14){
+newcsv=paste0("~/cl-validation/Output/",fileList[i])
+data=read.csv(newcsv)
+newTitle=paste0("% Complete of ",nameList[i]," Per State")
+plot = ggplot(data, aes(x = (100-X..missing), y = fct_reorder(DEED.SITUS.STATE...STATIC, X..missing, .desc = FALSE))) +
+  geom_point()+scale_x_continuous(limits = c(0, 100))+labs(
+   x = "% Complete ",
+    y = "State Abbr.",
+   title = newTitle,
+  )
+print(plot)
+}
+
+
+````
+
+
+
+### Side by side comparison of 2.5% Quantiles for Sale Derived Date Arms Length Vs All Sales 
+````{R}
+quantData <- read.csv("~/cl-validation/Output/QuantileStateData")
+joined_data <- left_join(quantData, shift_geometry(states(cb=TRUE)), 
+                          by = c(DEED.SITUS.STATE...STATIC = "STUSPS"), 
+                          keep = TRUE)
+
+
+ggplot() +
+  geom_sf(data = joined_data, aes(fill = quantile2.5Year, geometry = geometry)) +
+ scale_fill_distiller(palette = "RdYlGn") +
+  theme_minimal() +
+  labs(fill = "Quantile 2.5% Year for Sale Derived Year", title= "Map of Quantile 2.5% Year for Sale Derived Year")+ 
+  theme_void()
+
+
+quantiData <- read.csv("~/cl-validation/Output/QuantileArmsStateData")
+joinedi_data <- left_join(quantiData, shift_geometry(states(cb=TRUE)), 
+                          by = c(DEED.SITUS.STATE...STATIC = "STUSPS"), 
+                          keep = TRUE)
+
+
+ggplot() +
+  geom_sf(data = joinedi_data, aes(fill = quantile2.5Year, geometry = geometry)) +
+ scale_fill_distiller(palette = "RdYlGn") +
+  theme_minimal() +
+  labs(fill = "2.5% Quantile of sales year, arms-length sales", title= "Map of Quantile 2.5% Year for arms-length Sale Derived Year")+ 
+  theme_void()
+
+
+
+````
+### Quantile Map for Counties 
+````{R}
+quantData <- read.csv("~/cl-validation/Output/QuantileArmsCountyData")
+
+# Load counties spatial data
+counties <- counties(cb = TRUE) |> shift_geometry()  
+counties=counties |> mutate(NAME=toupper(NAME))
+#print(counties)
+
+ 
+join_data <- left_join(
+  quantData, 
+  counties, 
+  by = c("DEED.SITUS.COUNTY...STATIC" = "NAME", "DEED.SITUS.STATE...STATIC" = "STUSPS"), 
+  keep = TRUE
+)
+
+
+
+# Plot with ggplot2
+ggplot() +
+ geom_sf(data = join_data, aes(fill = quantile2.5Year,geometry=geometry)) +
+  scale_fill_distiller(palette = "RdYlGn") +
+  theme_minimal() +
+  labs(fill = "2.5% Quantile of sales year, arms-length sales") +
+  theme_void() 
+ 
+
+
+
+````
+### Density plots comparing % complete of sale amount based on Rural Urban Continuum Codes of 1993 and 2023
+````{R}
+#1990 raises some new questions what about population growth it is binary 0 vs 1 not 1-9 like 2023
+# 0 =non metro, 1= metro 
+
+#Rural Urban Continuum Codes for 2023 1-9 1=Most Metro 9=Most Rural
+RUCcodes=read_csv("~/cl-validation/Output/Ruralurbancontinuumcodes2023.csv")
+
+#RUC codes for 1990 1= metro 0=non metro
+RUCcodes1990=read_csv("~/cl-validation/Output/1990.csv")
+
+#Filtering
+RUCcodes1990=RUCcodes1990 |> 
+  mutate(FIPS =substr(`FIPS state-county-tract code`,1,5)) |> 
+  distinct(`FIPS`,.keep_all = TRUE) |>
+  select(-(`FIPS state-county-tract code`:`Census tract land area, square miles, 1990`))
+
+#Filtering
+RUCcodes=RUCcodes |> 
+  filter(Attribute=="RUCC_2023")
+
+RUCcodes= RUCcodes |> 
+  mutate(County_Name = str_replace_all(County_Name, " County", "") %>% toupper())
+
+#Sales Data
+Salecsv=read_csv("~/cl-validation/Output/SaleAmt.csv")
+
+#Arms Length Sales Data 
+SaleTypeAcsv=read_csv("~/cl-validation/Output/SaleAmountTypeA.csv")
+
+#Sees what is missing
+missing=anti_join(RUCcodes,Salecsv, by= c("FIPS" = "FIPS.CODE"))
+Missing=anti_join(RUCcodes1990,Salecsv, by= c("FIPS" = "FIPS.CODE"))
+
+#By county 
+SaleCounty=read_csv("~/cl-validation/Output/SaleAmtCounty.csv")
+
+#Joins 
+jointData=left_join(Salecsv,RUCcodes, by = c("DEED.SITUS.STATE...STATIC" = "State", "FIPS.CODE" = "FIPS"), 
+  keep = TRUE)
+
+#Joining and Filtering
+jointData=jointData |> filter(FIPS!="NA") |>
+  select(-c(County_Name:State)) |>
+  select(-c(Attribute:Attribute)) 
+joinData=left_join(SaleCounty,RUCcodes, by = c("DEED.SITUS.STATE...STATIC" = "State", "DEED.SITUS.COUNTY...STATIC" = "County_Name"), 
+  keep = TRUE)
+joinData= joinData |> 
+  filter(Value!="NA")
+
+#More joining 
+#Salecsv=left_join(Salecsv,fips_codes,by= c("DEED.SITUS.STATE...STATIC" = "state"),keep = TRUE)
+#Salecsv=Salecsv |>
+#  distinct(FIPS.CODE,state,.keep_all = TRUE)
+
+#Filtering
+RealJoinData=left_join(Salecsv,RUCcodes1990,by= c("FIPS.CODE" = "FIPS"),keep = TRUE)
+
+
+#Plot of Fips Code RUC 2023
+jointData = jointData |> 
+  select(-(...1)) |>
+  mutate("Complete %"=(100-X..missing))
+ggplot(jointData, aes(x=`Complete %`,fill = `Value`)) + labs(title="% Complete of House Sale Prices County Data by \nPopulation Concentration",subtitle = "1= Most Metro, 9= Most Rural",caption = "Source: 2023 Rural-Urban Continuum Codes",x="% Complete",y="Density", fill="RUC Code") +geom_density(alpha = 0.5)+
+  theme_minimal()
+ggsave("~/cl-validation/Output/RUCA.jpg",plot = last_plot(),dpi = 300, width = 6 ,height = 3)
+
+## Turns 1-3=1 and 4-9=0
+jointData = jointData |> mutate("Value"=as.numeric(`Value`)) |> mutate(Value= case_when(
+  Value>3 ~ 0,
+  Value<=3 ~ 1
+  
+)) |> mutate("Value"=as.character(`Value`)) 
+jointData=jointData|> filter(Value !="NA")
+
+#Plot of Fips Code RUC 2023 now changes scales
+ggplot(jointData, aes(x=`Complete %`,fill = `Value`)) + labs(title="2023 RUC Codes All Sales", subtitle="1=Metro, 0=Rural")+ geom_density(alpha = 0.5)
+
+# For Arms Length Sales 
+jointTypeAData9=left_join(SaleTypeAcsv,RUCcodes, by = c("DEED.SITUS.STATE...STATIC" = "State", "FIPS.CODE" = "FIPS"), 
+  keep = TRUE)
+
+jointTypeAData9=jointTypeAData9 |> 
+  filter(FIPS!="NA") |> 
+  select(-c(County_Name:State)) |> 
+  select(-c(Attribute:Attribute))
+
+jointTypeAData9 = jointTypeAData9 |> 
+  select(-(...1)) |> 
+  mutate("Complete %"=(100-X..missing))
+
+jointTypeAData9=jointTypeAData9|> 
+  filter(Value !="NA")
+
+ggplot(jointTypeAData9, aes(x=`Complete %`,fill = `Value`)) +  labs(title="2023 RUC Codes Arms Length Sales",subtitle = "1= Most Metro, 9= Most Rural")+ geom_density(alpha = 0.5)
+
+
+# For Arms Length Sales different scale
+jointTypeAData=left_join(SaleTypeAcsv,RUCcodes, by = c("DEED.SITUS.STATE...STATIC" = "State", "FIPS.CODE" = "FIPS"), 
+  keep = TRUE)
+
+jointTypeAData=jointTypeAData |> 
+  filter(FIPS!="NA") |> 
+  select(-c(County_Name:State)) |> 
+  select(-c(Attribute:Attribute)) 
+
+jointTypeAData = jointTypeAData |> 
+  select(-(...1)) |>
+  mutate("Complete %"=(100-X..missing))
+
+jointTypeAData = jointTypeAData |> 
+  mutate("Value"=as.numeric(`Value`)) |> 
+  mutate(Value= case_when(
+  Value>3 ~ 0,
+  Value<=3 ~ 1)) |> mutate("Value"=as.character(`Value`)) 
+
+jointTypeAData=jointTypeAData|> 
+  filter(Value !="NA")
+
+
+ggplot(jointTypeAData, aes(x=`Complete %`,fill = `Value`))  +  labs(title="2023 RUC Codes Arms Length Sales",subtitle = "1=Metro, 0=Rural")+ geom_density(alpha = 0.5)
+
+
+
+````
