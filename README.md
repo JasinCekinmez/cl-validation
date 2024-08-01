@@ -2,6 +2,8 @@
 
 The goal of my code and research is to analyze the completeness of two administrative datasets and then to create a model that predicts house prices based on the clean data and variables. 
 
+# Functions
+
 --`TibbleCreator()` serves the purpose of returning tables that show the completeness for various columns in different counties, states, years, etc. 
 
 --`LollipopCreator()` looks at the completeness for arms and non arms lengths 
